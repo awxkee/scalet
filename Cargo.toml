@@ -2,6 +2,17 @@
 name = "scalet"
 version = "0.1.0"
 edition = "2024"
+description = "Continious wavelet transform"
+readme = "README.md"
+keywords = ["dsp", "wavelet", "cwt"]
+license = "BSD-3-Clause OR Apache-2.0"
+authors = ["Radzivon Bartoshyk"]
+documentation = "https://github.com/awxkee/scalet"
+categories = ["algorithms", "science"]
+homepage = "https://github.com/awxkee/scalet"
+repository = "https://github.com/awxkee/scalet"
+exclude = ["*.jpg", "/assets", "*.png", "*.sh", "/assets/*"]
+rust-version = "1.87.0"
 
 [dependencies]
 num-traits = "0.2.19"
