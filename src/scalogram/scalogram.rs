@@ -172,7 +172,7 @@ where
     Ok(img)
 }
 
-pub fn draw_scalogram_color_impl_f32(
+pub(crate) fn draw_scalogram_color_impl_f32(
     coeffs: &[Vec<Complex<f32>>],
     out_width: usize,
     out_height: usize,
@@ -181,7 +181,7 @@ pub fn draw_scalogram_color_impl_f32(
     draw_scalogram_color_impl(coeffs, out_width, out_height, colormap)
 }
 
-pub fn draw_scalogram_color_impl_f64(
+pub(crate) fn draw_scalogram_color_impl_f64(
     coeffs: &[Vec<Complex<f64>>],
     out_width: usize,
     out_height: usize,
