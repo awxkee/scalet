@@ -1,0 +1,20 @@
+[package]
+name = "scalet"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num-traits = "0.2.19"
+num-complex = "0.4.6"
+pxfm = "0.1.27"
+zaft = "0.2.6"
+
+[features]
+default = ["neon", "sse", "avx"]
+neon = ["zaft/neon"]
+# FEAT_FCMA ( complex multiply add on NEON )
+fcma = ["neon", "zaft/fcma"]
+# Enables SSE 4.2 acceleration
+sse = []
+# Enables AVX2 + FMA acceleration
+avx = ["zaft/avx"]
