@@ -30,4 +30,4 @@ mod colormap;
 mod scalogram;
 
 pub use colormap::Colormap;
-pub use scalogram::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
+pub(crate) use scalogram::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
