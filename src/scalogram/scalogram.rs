@@ -130,7 +130,6 @@ fn draw_scalogram_color_impl<T: CwtSample>(
     colormap: Colormap,
 ) -> Result<Vec<u8>, ScaletError>
 where
-    T: AsPrimitive<f32>,
     f64: AsPrimitive<T>,
 {
     let (r_slice, g_slice, b_slice) = colormap.colorset();
