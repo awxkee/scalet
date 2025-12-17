@@ -116,7 +116,7 @@ where
             // input * other.conj() * normalize_value
             self.spectrum_arithmetic.mul_by_b_conj_normalize(
                 v_dst,
-                &signal_fft,
+                signal_fft,
                 &wavelet_fft,
                 norm_factor,
             );

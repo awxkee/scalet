@@ -26,6 +26,7 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#![allow(clippy::excessive_precision)]
 #![cfg_attr(
     all(feature = "fcma", target_arch = "aarch64"),
     feature(stdarch_neon_fcma)
