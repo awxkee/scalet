@@ -74,7 +74,7 @@ where
         // Initialize temporary vectors and the final result structure.
         // current_psi: Workspace for the wavelet filter in the frequency domain for the current scale.
         let mut current_psi = try_vec![T::zero(); self.execution_length];
-        // result: The final CWT scalogram [num_scales][signal_length], storing complex coefficients.
+        // result: The final CWT drawing [num_scales][signal_length], storing complex coefficients.
         let mut result = try_vec![try_vec![Complex::new(T::zero(), T::zero()); self.execution_length]; scales.len()];
 
         for (&scale, v_dst) in scales.iter().zip(result.iter_mut()) {

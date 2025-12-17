@@ -27,10 +27,10 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::ScaletError;
+use crate::drawing::colormap::Colormap;
 use crate::err::try_vec;
 use crate::mla::fmla;
 use crate::sample::CwtSample;
-use crate::scalogram::colormap::Colormap;
 use num_complex::Complex;
 use num_traits::AsPrimitive;
 

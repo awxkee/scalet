@@ -35,6 +35,8 @@
 mod avx;
 mod cwt_executor;
 mod cwt_filter;
+#[cfg(feature = "scalogram")]
+mod drawing;
 mod err;
 mod factory;
 mod freqs;
@@ -44,22 +46,20 @@ mod neon;
 mod sample;
 mod scale_bounds;
 mod scales;
-#[cfg(feature = "scalogram")]
-mod scalogram;
 mod spetrum_arith;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "sse"))]
 mod sse;
 mod wavelets;
 
+#[cfg(feature = "scalogram")]
+use crate::drawing::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
 use crate::factory::create_cwt;
 use crate::freqs::scale_to_frequencies_impl;
-#[cfg(feature = "scalogram")]
-use crate::scalogram::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
 pub use cwt_filter::CwtWavelet;
+#[cfg(feature = "scalogram")]
+pub use drawing::Colormap;
 pub use err::ScaletError;
 use num_complex::Complex;
-#[cfg(feature = "scalogram")]
-pub use scalogram::Colormap;
 use std::sync::Arc;
 pub use wavelets::{CmhatWavelet, HhhatWavelet, MorletWavelet};
 
@@ -108,7 +108,7 @@ impl Default for CwtOptions {
 pub trait CwtExecutor<T> {
     /// Executes the Continuous Wavelet Transform on the input signal.
     ///
-    /// The output is a 2D vector representing the scalogram. Each inner `Vec<Complex<T>>`
+    /// The output is a 2D vector representing the drawing. Each inner `Vec<Complex<T>>`
     /// corresponds to the wavelet coefficients for one scale (row), containing coefficients
     /// across the time axis (columns).
     /// The resulting dimensions are: `[num_scales, input_length]`.
@@ -122,7 +122,7 @@ pub trait CwtExecutor<T> {
     /// - `input`: Complex-valued time-domain signal to be analyzed.
     ///
     /// # Returns
-    /// A two-dimensional vector representing the **scalogram**, with the same
+    /// A two-dimensional vector representing the **drawing**, with the same
     /// layout and interpretation as [`execute`](Self::execute).
     ///
     /// # Errors

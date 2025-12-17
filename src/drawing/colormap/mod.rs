@@ -26,20 +26,20 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::scalogram::colormap::cividis::{CIVIDIS_B, CIVIDIS_G, CIVIDIS_R};
-use crate::scalogram::colormap::inferno::{INFERNO_B, INFERNO_G, INFERNO_R};
-use crate::scalogram::colormap::jet::{JET_B, JET_G, JET_R};
-use crate::scalogram::colormap::magma::{MAGMA_B, MAGMA_G, MAGMA_R};
-use crate::scalogram::colormap::ocean::{OCEAN_B, OCEAN_G, OCEAN_R};
-use crate::scalogram::colormap::pink::{PINK_B, PINK_G, PINK_R};
-use crate::scalogram::colormap::plasma::{PLASMA_B, PLASMA_G, PLASMA_R};
-use crate::scalogram::colormap::spring::{SPRING_B, SPRING_G, SPRING_R};
-use crate::scalogram::colormap::summer::{SUMMER_B, SUMMER_G, SUMMER_R};
-use crate::scalogram::colormap::turbo::{TURBO_B, TURBO_G, TURBO_R};
-use crate::scalogram::colormap::twilight::{TWILIGHT_B, TWILIGHT_G, TWILIGHT_R};
-use crate::scalogram::colormap::twilight_shifted::{TWILIGHT_S_B, TWILIGHT_S_G, TWILIGHT_S_R};
-use crate::scalogram::colormap::viridis::{VIRIDIS_B, VIRIDIS_G, VIRIDIS_R};
-use crate::scalogram::colormap::winter::{WINTER_B, WINTER_G, WINTER_R};
+use crate::drawing::colormap::cividis::{CIVIDIS_B, CIVIDIS_G, CIVIDIS_R};
+use crate::drawing::colormap::inferno::{INFERNO_B, INFERNO_G, INFERNO_R};
+use crate::drawing::colormap::jet::{JET_B, JET_G, JET_R};
+use crate::drawing::colormap::magma::{MAGMA_B, MAGMA_G, MAGMA_R};
+use crate::drawing::colormap::ocean::{OCEAN_B, OCEAN_G, OCEAN_R};
+use crate::drawing::colormap::pink::{PINK_B, PINK_G, PINK_R};
+use crate::drawing::colormap::plasma::{PLASMA_B, PLASMA_G, PLASMA_R};
+use crate::drawing::colormap::spring::{SPRING_B, SPRING_G, SPRING_R};
+use crate::drawing::colormap::summer::{SUMMER_B, SUMMER_G, SUMMER_R};
+use crate::drawing::colormap::turbo::{TURBO_B, TURBO_G, TURBO_R};
+use crate::drawing::colormap::twilight::{TWILIGHT_B, TWILIGHT_G, TWILIGHT_R};
+use crate::drawing::colormap::twilight_shifted::{TWILIGHT_S_B, TWILIGHT_S_G, TWILIGHT_S_R};
+use crate::drawing::colormap::viridis::{VIRIDIS_B, VIRIDIS_G, VIRIDIS_R};
+use crate::drawing::colormap::winter::{WINTER_B, WINTER_G, WINTER_R};
 
 mod cividis;
 mod inferno;
