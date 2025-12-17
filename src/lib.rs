@@ -43,6 +43,8 @@ mod neon;
 mod sample;
 mod scale_bounds;
 mod scales;
+#[cfg(feature = "scalogram")]
+mod scalogram;
 mod spetrum_arith;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "sse"))]
 mod sse;
@@ -50,9 +52,13 @@ mod wavelets;
 
 use crate::factory::create_cwt;
 use crate::freqs::scale_to_frequencies_impl;
+#[cfg(feature = "scalogram")]
+use crate::scalogram::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
 pub use cwt_filter::CwtWavelet;
 pub use err::ScaletError;
 use num_complex::Complex;
+#[cfg(feature = "scalogram")]
+pub use scalogram::Colormap;
 use std::sync::Arc;
 pub use wavelets::{CmhatWavelet, HhhatWavelet, MorletWavelet};
 
@@ -273,6 +279,26 @@ impl Scalet {
         sampling_frequency: f64,
     ) -> Result<Vec<f64>, ScaletError> {
         scale_to_frequencies_impl(wavelet, scales, sampling_frequency, filter_length)
+    }
+
+    #[cfg(feature = "scalogram")]
+    pub fn draw_scalogram_color_f32(
+        coeffs: &[Vec<Complex<f32>>],
+        out_width: usize,
+        out_height: usize,
+        colormap: Colormap,
+    ) -> Result<Vec<u8>, ScaletError> {
+        draw_scalogram_color_impl_f32(coeffs, out_width, out_height, colormap)
+    }
+
+    #[cfg(feature = "scalogram")]
+    pub fn draw_scalogram_color_f64(
+        coeffs: &[Vec<Complex<f64>>],
+        out_width: usize,
+        out_height: usize,
+        colormap: Colormap,
+    ) -> Result<Vec<u8>, ScaletError> {
+        draw_scalogram_color_impl_f64(coeffs, out_width, out_height, colormap)
     }
 }
 

@@ -18,3 +18,5 @@ fcma = ["neon", "zaft/fcma"]
 sse = []
 # Enables AVX2 + FMA acceleration
 avx = ["zaft/avx"]
+# Scalogram drawing
+scalogram = []
