@@ -281,6 +281,20 @@ impl Scalet {
         scale_to_frequencies_impl(wavelet, scales, sampling_frequency, filter_length)
     }
 
+    /// Draws a colorful scaleogram from CWT coefficients (f32 version).
+    ///
+    /// This function generates a color image representing the magnitude of the
+    /// complex wavelet coefficients. The image is returned as a `Vec<u8>` in
+    /// RGB format (3 bytes per pixel: R, G, B).
+    ///
+    /// # Parameters
+    ///
+    /// * `coeffs` - 2D slice of complex wavelet coefficients. Outer index corresponds to scales,
+    ///   inner index corresponds to time. Typically, scales are in ascending order (low → high).
+    /// * `out_width` - Width of the output image in pixels (time axis).
+    /// * `out_height` - Height of the output image in pixels (scale axis).
+    /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
+    ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
     #[cfg(feature = "scalogram")]
     pub fn draw_scalogram_color_f32(
         coeffs: &[Vec<Complex<f32>>],
@@ -291,6 +305,20 @@ impl Scalet {
         draw_scalogram_color_impl_f32(coeffs, out_width, out_height, colormap)
     }
 
+    /// Draws a colorful scaleogram from CWT coefficients (f32 version).
+    ///
+    /// This function generates a color image representing the magnitude of the
+    /// complex wavelet coefficients. The image is returned as a `Vec<u8>` in
+    /// RGB format (3 bytes per pixel: R, G, B).
+    ///
+    /// # Parameters
+    ///
+    /// * `coeffs` - 2D slice of complex wavelet coefficients. Outer index corresponds to scales,
+    ///   inner index corresponds to time. Typically, scales are in ascending order (low → high).
+    /// * `out_width` - Width of the output image in pixels (time axis).
+    /// * `out_height` - Height of the output image in pixels (scale axis).
+    /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
+    ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
     #[cfg(feature = "scalogram")]
     pub fn draw_scalogram_color_f64(
         coeffs: &[Vec<Complex<f64>>],
