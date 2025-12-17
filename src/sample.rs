@@ -57,6 +57,7 @@ pub trait CwtSample:
     + PartialOrd
     + AsPrimitive<usize>
     + AsPrimitive<isize>
+    + AsPrimitive<f32>
     + SpectrumArithmeticFactory
 {
     fn pow(self, other: Self) -> Self;

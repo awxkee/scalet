@@ -36,7 +36,6 @@ use num_traits::AsPrimitive;
 
 fn normalize_abs<T: CwtSample>(coeffs: &[Vec<Complex<T>>]) -> Vec<Vec<f32>>
 where
-    T: AsPrimitive<f32>,
     f64: AsPrimitive<T>,
 {
     let mut max = T::zero();
