@@ -31,6 +31,7 @@ use crate::factory::gen_psi;
 use crate::sample::CwtSample;
 use crate::{CwtWavelet, ScaletError};
 use num_traits::AsPrimitive;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 pub(crate) fn scale_to_frequencies_impl<T: CwtSample>(
@@ -67,7 +68,7 @@ where
         let idx = wavelet_fft
             .iter()
             .enumerate() // gives (index, &value)
-            .max_by(|a, b| a.1.re.partial_cmp(&b.1.re).unwrap()) // compare values
+            .max_by(|a, b| a.1.re.partial_cmp(&b.1.re).unwrap_or(Ordering::Equal)) // compare values
             .map(|(idx, _)| idx);
 
         *index = idx.unwrap_or(0);

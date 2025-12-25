@@ -27,10 +27,12 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #![allow(clippy::excessive_precision)]
+#![deny(clippy::unwrap_used)]
 #![cfg_attr(
     all(feature = "fcma", target_arch = "aarch64"),
     feature(stdarch_neon_fcma)
 )]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 mod avx;
 mod cwt_executor;
@@ -52,16 +54,18 @@ mod sse;
 mod wavelets;
 
 #[cfg(feature = "scalogram")]
+#[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
 use crate::drawing::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
 use crate::factory::create_cwt;
 use crate::freqs::scale_to_frequencies_impl;
 pub use cwt_filter::CwtWavelet;
 #[cfg(feature = "scalogram")]
+#[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
 pub use drawing::Colormap;
 pub use err::ScaletError;
 use num_complex::Complex;
 use std::sync::Arc;
-pub use wavelets::{CmhatWavelet, HhhatWavelet, MorletWavelet};
+pub use wavelets::{CmhatWavelet, GaborWavelet, HhhatWavelet, MorletWavelet};
 
 /// Configuration options for the Continuous Wavelet Transform (CWT).
 ///
@@ -86,8 +90,8 @@ pub struct CwtOptions {
     /// cost of higher computational complexity.
     pub nv: usize,
     /// Whether to L1-normalize the CWT, which yields a more representative
-    /// distribution of energies and component amplitudes than L2 (see [3]).
-    /// If False (default True), uses L2 norm.
+    /// distribution of energies and component amplitudes than L2.
+    /// If false (default true), uses L2 norm.
     pub l1_norm: bool,
 }
 
@@ -272,7 +276,7 @@ impl Scalet {
 
     /// Converts wavelet scales to corresponding frequencies (f64 version).
     ///
-    /// Same behavior and parameters as [`scales_to_frequencies_f32`], but for `f64` data.
+    /// Same behavior and parameters as [`Scalet::scales_to_frequencies_f32`], but for `f64` data.
     pub fn scales_to_frequencies_f64(
         wavelet: Arc<dyn CwtWavelet<f64> + Send + Sync>,
         scales: &[f64],
@@ -297,6 +301,7 @@ impl Scalet {
     /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
     ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
     #[cfg(feature = "scalogram")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
     pub fn draw_scalogram_color_f32(
         coeffs: &[Vec<Complex<f32>>],
         out_width: usize,
@@ -321,6 +326,7 @@ impl Scalet {
     /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
     ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
     #[cfg(feature = "scalogram")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
     pub fn draw_scalogram_color_f64(
         coeffs: &[Vec<Complex<f64>>],
         out_width: usize,

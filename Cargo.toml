@@ -1,6 +1,6 @@
 [package]
 name = "scalet"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Continious wavelet transform"
 readme = "README.md"
@@ -31,3 +31,9 @@ sse = []
 avx = ["zaft/avx"]
 # Scalogram drawing
 scalogram = []
+
+[package.metadata.docs.rs]
+# To build locally:
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps --open --manifest-path ./Cargo.toml
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

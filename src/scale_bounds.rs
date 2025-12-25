@@ -147,7 +147,7 @@ where
 
         search_idx += 1;
 
-        if *input_values.last().unwrap() > step_limit {
+        if *input_values.last().unwrap_or(&T::default()) > step_limit {
             return Err(ScaletError::Generic(format!(
                 "could not find function maximum with given \
 (step_size, steps_per_search, step_start, step_limit, min_value)=({}, {}, {}, {}, {})",
@@ -188,7 +188,7 @@ where
         input_values = linspace_exclusive(start, end, steps_per_search)?;
 
         // clip to step_limit if exceeded
-        if *input_values.last().unwrap() > step_limit {
+        if *input_values.last().unwrap_or(&T::default()) > step_limit {
             step_limit_exceeded = true;
             for v in &mut input_values {
                 *v = v.min(step_limit);

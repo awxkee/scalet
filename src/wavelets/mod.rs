@@ -27,9 +27,11 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 mod cmhat;
+mod gabor;
 mod hhat;
 mod morlet;
 
 pub use cmhat::CmhatWavelet;
+pub use gabor::GaborWavelet;
 pub use hhat::HhhatWavelet;
 pub use morlet::MorletWavelet;

@@ -29,7 +29,10 @@
 use crate::ScaletError;
 use crate::spetrum_arith::SpectrumArithmeticFactory;
 use num_traits::{AsPrimitive, MulAdd, Num, Zero};
-use pxfm::{f_exp, f_exp2, f_exp2f, f_expf, f_log2, f_log2f, f_pow, f_powf, f_rsqrt, f_rsqrtf};
+use pxfm::{
+    f_exp, f_exp2, f_exp2f, f_expf, f_log2, f_log2f, f_pow, f_powf, f_rsqrt, f_rsqrtf, f_sincos,
+    f_sincosf,
+};
 use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
@@ -77,6 +80,7 @@ pub trait CwtSample:
         length: usize,
         fft_direction: FftDirection,
     ) -> Result<Arc<dyn FftExecutor<Self> + Send + Sync>, ScaletError>;
+    fn sincos(self) -> (Self, Self);
     const NEG_INFINITY: Self;
     const INFINITY: Self;
     const PI: Self;
@@ -151,6 +155,11 @@ impl CwtSample for f32 {
     #[inline]
     fn copysign(self, other: Self) -> Self {
         f32::copysign(self, other)
+    }
+
+    #[inline]
+    fn sincos(self) -> (Self, Self) {
+        f_sincosf(self)
     }
 
     fn make_fft(
@@ -273,6 +282,11 @@ impl CwtSample for f64 {
     #[inline]
     fn copysign(self, other: Self) -> Self {
         f64::copysign(self, other)
+    }
+
+    #[inline]
+    fn sincos(self) -> (Self, Self) {
+        f_sincos(self)
     }
 
     fn make_fft(
