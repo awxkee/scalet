@@ -39,7 +39,7 @@ pub(crate) fn _m256_fcmul_a_by_b_conj(a: __m256, b: __m256) -> __m256 {
     let ai = _mm256_movehdup_ps(a); // duplicate odd lanes (im parts)
 
     // Swap real/imag of b for cross terms
-    let bswap = _mm256_permute_ps::<0b10110001>(b); // [im, re, im, re, ...]
+    let bswap = _mm256_shuffle_ps::<0b10110001>(b, b); // [im, re, im, re, ...]
 
     // re = ar*br - ai*bi
     // im = ar*bi + ai*br

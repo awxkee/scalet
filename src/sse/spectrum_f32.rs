@@ -40,7 +40,7 @@ fn _mm_fcmul_ps(a: __m128, b: __m128) -> __m128 {
     let mut temp2 = _mm_shuffle_ps::<0xF5>(b, b);
     temp1 = _mm_mul_ps(temp1, a);
     temp2 = _mm_mul_ps(temp2, a);
-    temp2 = _mm_shuffle_ps(temp2, temp2, 0xB1);
+    temp2 = _mm_shuffle_ps::<0xB1>(temp2, temp2);
     _mm_addsub_ps(temp1, temp2)
 }
 

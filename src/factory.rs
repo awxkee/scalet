@@ -80,6 +80,9 @@ where
     let fft_forward = T::make_fft(filter_size, FftDirection::Forward)?;
     let fft_inverse = T::make_fft(filter_size, FftDirection::Inverse)?;
     let psi = gen_psi(filter_size)?;
+    let scratch_length = fft_inverse
+        .scratch_length()
+        .max(fft_forward.scratch_length());
     Ok(Arc::new(CommonCwtExecutor {
         wavelet,
         fft_forward,
@@ -89,5 +92,6 @@ where
         execution_length: filter_size,
         l1_norm: options.l1_norm,
         spectrum_arithmetic: T::spectrum_arithmetic(),
+        scratch_length,
     }))
 }

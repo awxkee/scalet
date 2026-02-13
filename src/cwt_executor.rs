@@ -44,6 +44,7 @@ pub(crate) struct CommonCwtExecutor<T> {
     pub(crate) psi: Vec<T>,
     pub(crate) execution_length: usize,
     pub(crate) l1_norm: bool,
+    pub(crate) scratch_length: usize,
 }
 
 impl<T: CwtSample> CommonCwtExecutor<T>
@@ -62,10 +63,12 @@ where
             ));
         }
 
+        let mut scratch = try_vec![Complex::zero(); self.scratch_length];
+
         // 1. Transform the input signal into the frequency domain (Spectral Domain).
         // This is the first step of the FFT-based convolution theorem.
         self.fft_forward
-            .execute(signal_fft)
+            .execute_with_scratch(signal_fft, &mut scratch)
             .map_err(|x| ScaletError::FftError(x.to_string()))?;
 
         // Frequency vector
@@ -75,7 +78,7 @@ where
         // current_psi: Workspace for the wavelet filter in the frequency domain for the current scale.
         let mut current_psi = try_vec![T::zero(); self.execution_length];
         // result: The final CWT drawing [num_scales][signal_length], storing complex coefficients.
-        let mut result = try_vec![try_vec![Complex::new(T::zero(), T::zero()); self.execution_length]; scales.len()];
+        let mut result = try_vec![try_vec![Complex::zero(); self.execution_length]; scales.len()];
 
         for (&scale, v_dst) in scales.iter().zip(result.iter_mut()) {
             // --- Step 1: Prepare Wavelet Filter for Convolution ---
@@ -126,7 +129,7 @@ where
             // Perform the Inverse FFT (IFFT) to transform the resulting spectrum back to the time domain.
             // The result in v_dst is the complex CWT coefficients Wx(a, b) at the current scale 'a'.
             self.fft_inverse
-                .execute(v_dst)
+                .execute_with_scratch(v_dst, &mut scratch)
                 .map_err(|x| ScaletError::FftError(x.to_string()))?;
         }
 

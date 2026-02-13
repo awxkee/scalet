@@ -35,11 +35,11 @@ use std::arch::x86_64::*;
 #[target_feature(enable = "avx2", enable = "fma")]
 fn _mm256_fcmul_pd_conj_b(a: __m256d, b: __m256d) -> __m256d {
     // Swap real and imaginary parts of 'a' for FMA
-    let a_yx = _mm256_permute_pd::<0b0101>(a); // [a_im, a_re, b_im, b_re]
+    let a_yx = _mm256_shuffle_pd::<0b0101>(a, a); // [a_im, a_re, b_im, b_re]
 
     // Duplicate real and imaginary parts of 'b'
-    let b_xx = _mm256_permute_pd::<0b0000>(b); // [c_re, c_re, d_re, d_re]
-    let b_yy = _mm256_permute_pd::<0b1111>(b); // [c_im, c_im, d_im, d_im]
+    let b_xx = _mm256_shuffle_pd::<0b0000>(b, b); // [c_re, c_re, d_re, d_re]
+    let b_yy = _mm256_shuffle_pd::<0b1111>(b, b); // [c_im, c_im, d_im, d_im]
 
     _mm256_fmsubadd_pd(a, b_xx, _mm256_mul_pd(a_yx, b_yy))
 }
@@ -51,7 +51,7 @@ fn _mm_fcmul_pd_conj_b(a: __m128d, b: __m128d) -> __m128d {
     let temp1 = _mm_unpacklo_pd(b, b);
     let mut temp2 = _mm_unpackhi_pd(b, b);
     temp2 = _mm_mul_pd(temp2, a);
-    temp2 = _mm_shuffle_pd(temp2, temp2, 0x01);
+    temp2 = _mm_shuffle_pd::<0x01>(temp2, temp2);
     _mm_fmsubadd_pd(temp1, a, temp2)
 }
 
