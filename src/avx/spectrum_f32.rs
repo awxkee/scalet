@@ -26,7 +26,7 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::spetrum_arith::SpectrumArithmetic;
+use crate::complex_arith::ComplexArithmetic;
 use num_complex::Complex;
 use std::arch::x86_64::*;
 
@@ -60,7 +60,7 @@ fn _mm_fcmul_a_by_b_conj(a: __m128, b: __m128) -> __m128 {
 #[derive(Default)]
 pub(crate) struct AvxSpectrumF32 {}
 
-impl SpectrumArithmetic<f32> for AvxSpectrumF32 {
+impl ComplexArithmetic<f32> for AvxSpectrumF32 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f32>],

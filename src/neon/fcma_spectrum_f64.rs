@@ -27,15 +27,15 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+use crate::complex_arith::ComplexArithmetic;
 use crate::neon::util::vfcmul_conj_f64;
-use crate::spetrum_arith::SpectrumArithmetic;
 use num_complex::Complex;
 use std::arch::aarch64::*;
 
 #[derive(Copy, Clone, Default, Debug)]
 pub(crate) struct FcmaSpectrumF64 {}
 
-impl SpectrumArithmetic<f64> for FcmaSpectrumF64 {
+impl ComplexArithmetic<f64> for FcmaSpectrumF64 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f64>],

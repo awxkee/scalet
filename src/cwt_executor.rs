@@ -26,10 +26,10 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+use crate::complex_arith::ComplexArithmetic;
 use crate::err::try_vec;
 use crate::sample::CwtSample;
-use crate::spetrum_arith::SpectrumArithmetic;
-use crate::{CwtExecutor, CwtWavelet, ScaletError};
+use crate::{BufferStoreMut, CwtExecutor, CwtWavelet, ScaletError, ScaletFrameMut};
 use num_complex::Complex;
 use num_traits::{AsPrimitive, Zero};
 use std::sync::Arc;
@@ -39,7 +39,7 @@ pub(crate) struct CommonCwtExecutor<T> {
     pub(crate) wavelet: Arc<dyn CwtWavelet<T> + Send + Sync>,
     pub(crate) fft_forward: Arc<dyn FftExecutor<T> + Send + Sync>,
     pub(crate) fft_inverse: Arc<dyn FftExecutor<T> + Send + Sync>,
-    pub(crate) spectrum_arithmetic: Arc<dyn SpectrumArithmetic<T> + Send + Sync>,
+    pub(crate) complex_arithmetic: Arc<dyn ComplexArithmetic<T> + Send + Sync>,
     pub(crate) scales: Vec<T>,
     pub(crate) psi: Vec<T>,
     pub(crate) execution_length: usize,
@@ -54,8 +54,10 @@ where
 {
     fn execute_impl(
         &self,
+        into: &mut ScaletFrameMut<'_, Complex<T>>,
         signal_fft: &mut [Complex<T>],
-    ) -> Result<Vec<Vec<Complex<T>>>, ScaletError> {
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), ScaletError> {
         if self.execution_length != signal_fft.len() {
             return Err(ScaletError::InvalidInputSize(
                 self.execution_length,
@@ -63,12 +65,19 @@ where
             ));
         }
 
-        let mut scratch = try_vec![Complex::zero(); self.scratch_length];
+        if scratch.len() < self.scratch_length {
+            return Err(ScaletError::InvalidScratchSize(
+                self.scratch_length,
+                scratch.len(),
+            ));
+        }
+
+        let (scratch, _) = scratch.split_at_mut(self.scratch_length);
 
         // 1. Transform the input signal into the frequency domain (Spectral Domain).
         // This is the first step of the FFT-based convolution theorem.
         self.fft_forward
-            .execute_with_scratch(signal_fft, &mut scratch)
+            .execute_with_scratch(signal_fft, scratch)
             .map_err(|x| ScaletError::FftError(x.to_string()))?;
 
         // Frequency vector
@@ -78,9 +87,42 @@ where
         // current_psi: Workspace for the wavelet filter in the frequency domain for the current scale.
         let mut current_psi = try_vec![T::zero(); self.execution_length];
         // result: The final CWT drawing [num_scales][signal_length], storing complex coefficients.
-        let mut result = try_vec![try_vec![Complex::zero(); self.execution_length]; scales.len()];
 
-        for (&scale, v_dst) in scales.iter().zip(result.iter_mut()) {
+        if self.execution_length != into.width {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Invalid frame width, expected {} but it was {}",
+                    self.execution_length, into.width
+                )
+                .to_string(),
+            ));
+        }
+        if scales.len() != into.height {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Invalid frame height, expected {} but it was {}",
+                    scales.len(),
+                    into.height
+                )
+                .to_string(),
+            ));
+        }
+        if into.data.borrow().len() != scales.len() * self.execution_length {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Invalid frame size, expected {} but it was {}",
+                    scales.len() * self.execution_length,
+                    into.data.borrow().len()
+                )
+                .to_string(),
+            ));
+        }
+
+        for (&scale, v_dst) in scales.iter().zip(
+            into.data
+                .borrow_mut()
+                .chunks_exact_mut(self.execution_length),
+        ) {
             // --- Step 1: Prepare Wavelet Filter for Convolution ---
 
             // Adjust the pre-calculated base phases (self.psi) by the current scale 'a'.
@@ -117,7 +159,7 @@ where
             };
 
             // input * other.conj() * normalize_value
-            self.spectrum_arithmetic.mul_by_b_conj_normalize(
+            self.complex_arithmetic.mul_by_b_conj_normalize(
                 v_dst,
                 signal_fft,
                 &wavelet_fft,
@@ -129,11 +171,11 @@ where
             // Perform the Inverse FFT (IFFT) to transform the resulting spectrum back to the time domain.
             // The result in v_dst is the complex CWT coefficients Wx(a, b) at the current scale 'a'.
             self.fft_inverse
-                .execute_with_scratch(v_dst, &mut scratch)
+                .execute_with_scratch(v_dst, scratch)
                 .map_err(|x| ScaletError::FftError(x.to_string()))?;
         }
 
-        Ok(result)
+        Ok(())
     }
 }
 
@@ -142,7 +184,27 @@ where
     f64: AsPrimitive<T>,
     usize: AsPrimitive<T>,
 {
-    fn execute(&self, input: &[T]) -> Result<Vec<Vec<Complex<T>>>, ScaletError> {
+    fn execute(&self, input: &[T]) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError> {
+        let mut frame = ScaletFrameMut {
+            data: BufferStoreMut::Owned(
+                try_vec![Complex::zero(); self.view_scales().len() * self.execution_length],
+            ),
+            height: self.view_scales().len(),
+            width: self.execution_length,
+        };
+
+        let mut scratch = try_vec![Complex::zero(); self.scratch_length];
+
+        self.execute_with_scratch(input, &mut frame, &mut scratch)?;
+        Ok(frame)
+    }
+
+    fn execute_with_scratch(
+        &self,
+        input: &[T],
+        into_frame: &mut ScaletFrameMut<'_, Complex<T>>,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), ScaletError> {
         if self.execution_length != input.len() {
             return Err(ScaletError::InvalidInputSize(
                 self.execution_length,
@@ -154,10 +216,42 @@ where
         for (dst, &src) in signal_fft.iter_mut().zip(input.iter()) {
             *dst = Complex::new(src, Zero::zero());
         }
-        self.execute_impl(&mut signal_fft)
+        self.execute_impl(into_frame, &mut signal_fft, scratch)?;
+        Ok(())
     }
 
-    fn execute_complex(&self, input: &[Complex<T>]) -> Result<Vec<Vec<Complex<T>>>, ScaletError> {
+    fn execute_complex(
+        &self,
+        input: &[Complex<T>],
+    ) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError> {
+        if self.execution_length != input.len() {
+            return Err(ScaletError::InvalidInputSize(
+                self.execution_length,
+                input.len(),
+            ));
+        }
+
+        let mut frame = ScaletFrameMut {
+            data: BufferStoreMut::Owned(
+                try_vec![Complex::zero(); self.view_scales().len() * self.execution_length],
+            ),
+            height: self.view_scales().len(),
+            width: self.execution_length,
+        };
+
+        let mut scratch = try_vec![Complex::zero(); self.scratch_length];
+
+        let mut signal_fft = input.to_vec();
+        self.execute_impl(&mut frame, &mut signal_fft, &mut scratch)?;
+        Ok(frame)
+    }
+
+    fn execute_complex_with_scratch(
+        &self,
+        input: &[Complex<T>],
+        into: &mut ScaletFrameMut<'_, Complex<T>>,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), ScaletError> {
         if self.execution_length != input.len() {
             return Err(ScaletError::InvalidInputSize(
                 self.execution_length,
@@ -166,7 +260,8 @@ where
         }
 
         let mut signal_fft = input.to_vec();
-        self.execute_impl(&mut signal_fft)
+        self.execute_impl(into, &mut signal_fft, scratch)?;
+        Ok(())
     }
 
     fn length(&self) -> usize {
@@ -175,5 +270,9 @@ where
 
     fn view_scales(&self) -> &[T] {
         &self.scales
+    }
+
+    fn scratch_length(&self) -> usize {
+        self.scratch_length
     }
 }

@@ -40,6 +40,8 @@ pub enum ScaletError {
     InvalidInputSize(usize, usize),
     ZeroBaseSized,
     WaveletInvalidSize(usize, usize),
+    InvalidFrame(String),
+    InvalidScratchSize(usize, usize),
 }
 
 impl Display for ScaletError {
@@ -57,6 +59,10 @@ impl Display for ScaletError {
             ScaletError::WaveletInvalidSize(expected, actual) => f.write_fmt(format_args!(
                 "Wavelet is supposed to return size {expected} but it was {actual}"
             )),
+            ScaletError::InvalidFrame(s) => f.write_str(s),
+            ScaletError::InvalidScratchSize(expected, actual) => {
+                f.write_fmt(format_args!("Scratch size {expected} but it was {actual}"))
+            }
         }
     }
 }
