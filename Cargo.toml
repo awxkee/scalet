@@ -1,6 +1,6 @@
 [package]
 name = "scalet"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "Continious wavelet transform"
 readme = "README.md"
@@ -29,8 +29,6 @@ fcma = ["neon", "zaft/fcma"]
 sse = []
 # Enables AVX2 + FMA acceleration
 avx = ["zaft/avx"]
-# Scalogram drawing
-scalogram = []
 
 [package.metadata.docs.rs]
 # To build locally:

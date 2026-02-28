@@ -35,10 +35,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
 mod avx;
+mod complex_arith;
 mod cwt_executor;
 mod cwt_filter;
-#[cfg(feature = "scalogram")]
-mod drawing;
 mod err;
 mod factory;
 mod freqs;
@@ -48,20 +47,13 @@ mod neon;
 mod sample;
 mod scale_bounds;
 mod scales;
-mod spetrum_arith;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "sse"))]
 mod sse;
 mod wavelets;
 
-#[cfg(feature = "scalogram")]
-#[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
-use crate::drawing::{draw_scalogram_color_impl_f32, draw_scalogram_color_impl_f64};
 use crate::factory::create_cwt;
 use crate::freqs::scale_to_frequencies_impl;
 pub use cwt_filter::CwtWavelet;
-#[cfg(feature = "scalogram")]
-#[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
-pub use drawing::Colormap;
 pub use err::ScaletError;
 use num_complex::Complex;
 use std::sync::Arc;
@@ -109,14 +101,33 @@ impl Default for CwtOptions {
 ///
 /// Implementors of this trait handle the pre-calculation of wavelet filters
 /// and the efficient execution of the CWT against an input signal.
-pub trait CwtExecutor<T> {
+pub trait CwtExecutor<T>
+where
+    [Complex<T>]: ToOwned<Owned = Vec<Complex<T>>>,
+{
     /// Executes the Continuous Wavelet Transform on the input signal.
     ///
     /// The output is a 2D vector representing the drawing. Each inner `Vec<Complex<T>>`
     /// corresponds to the wavelet coefficients for one scale (row), containing coefficients
     /// across the time axis (columns).
     /// The resulting dimensions are: `[num_scales, input_length]`.
-    fn execute(&self, input: &[T]) -> Result<Vec<Vec<Complex<T>>>, ScaletError>;
+    fn execute(&self, input: &[T]) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError>;
+    /// Executes the Continuous Wavelet Transform using caller-provided buffers.
+    ///
+    /// This method avoids internal allocations and allows the caller
+    /// to reuse memory for performance-sensitive workloads.
+    ///
+    /// # Parameters
+    /// - `input`: Real-valued time-domain signal.
+    /// - `into_frame`: Preallocated output frame that will receive the coefficients.
+    /// - `scratch`: Temporary working buffer. Must be at least
+    ///   [`Self::scratch_length`] elements long.
+    fn execute_with_scratch(
+        &self,
+        input: &[T],
+        into_frame: &mut ScaletFrameMut<'_, Complex<T>>,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), ScaletError>;
     /// Executes the Continuous Wavelet Transform on a **complex-valued** input signal.
     ///
     /// This method allows direct analysis of analytic signals or signals that
@@ -132,7 +143,27 @@ pub trait CwtExecutor<T> {
     /// # Errors
     /// Returns `ScaletError` if the input length is incompatible with the
     /// executor configuration or if an internal FFT operation fails.
-    fn execute_complex(&self, input: &[Complex<T>]) -> Result<Vec<Vec<Complex<T>>>, ScaletError>;
+    fn execute_complex(
+        &self,
+        input: &[Complex<T>],
+    ) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError>;
+    /// Executes the Continuous Wavelet Transform on a complex-valued signal
+    /// using caller-provided buffers.
+    ///
+    /// This variant avoids internal allocations and is intended for
+    /// high-performance or real-time scenarios.
+    ///
+    /// # Parameters
+    /// - `input`: Complex-valued time-domain signal.
+    /// - `into`: Preallocated output frame that will receive the coefficients.
+    /// - `scratch`: Temporary working buffer. Must be at least
+    ///   [`Self::scratch_length`] elements long.
+    fn execute_complex_with_scratch(
+        &self,
+        input: &[Complex<T>],
+        into: &mut ScaletFrameMut<'_, Complex<T>>,
+        scratch: &mut [Complex<T>],
+    ) -> Result<(), ScaletError>;
     /// Returns the expected length of the input signal this executor was built for.
     ///
     /// This is typically used to pre-calculate necessary internal parameters or
@@ -147,6 +178,12 @@ pub trait CwtExecutor<T> {
     ///
     /// An immutable slice (`&[T]`) containing the pre-calculated scale values.
     fn view_scales(&self) -> &[T];
+    /// Returns the required scratch buffer length for `_with_scratch` methods.
+    ///
+    /// The caller must allocate a scratch slice of at least this size
+    /// before invoking `execute_with_scratch` or
+    /// `execute_complex_with_scratch`.
+    fn scratch_length(&self) -> usize;
 }
 
 /// The main entry point for constructing CWT executors.
@@ -285,56 +322,6 @@ impl Scalet {
     ) -> Result<Vec<f64>, ScaletError> {
         scale_to_frequencies_impl(wavelet, scales, sampling_frequency, filter_length)
     }
-
-    /// Draws a colorful scaleogram from CWT coefficients (f32 version).
-    ///
-    /// This function generates a color image representing the magnitude of the
-    /// complex wavelet coefficients. The image is returned as a `Vec<u8>` in
-    /// RGB format (3 bytes per pixel: R, G, B).
-    ///
-    /// # Parameters
-    ///
-    /// * `coeffs` - 2D slice of complex wavelet coefficients. Outer index corresponds to scales,
-    ///   inner index corresponds to time. Typically, scales are in ascending order (low → high).
-    /// * `out_width` - Width of the output image in pixels (time axis).
-    /// * `out_height` - Height of the output image in pixels (scale axis).
-    /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
-    ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
-    #[cfg(feature = "scalogram")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
-    pub fn draw_scalogram_color_f32(
-        coeffs: &[Vec<Complex<f32>>],
-        out_width: usize,
-        out_height: usize,
-        colormap: Colormap,
-    ) -> Result<Vec<u8>, ScaletError> {
-        draw_scalogram_color_impl_f32(coeffs, out_width, out_height, colormap)
-    }
-
-    /// Draws a colorful scaleogram from CWT coefficients (f32 version).
-    ///
-    /// This function generates a color image representing the magnitude of the
-    /// complex wavelet coefficients. The image is returned as a `Vec<u8>` in
-    /// RGB format (3 bytes per pixel: R, G, B).
-    ///
-    /// # Parameters
-    ///
-    /// * `coeffs` - 2D slice of complex wavelet coefficients. Outer index corresponds to scales,
-    ///   inner index corresponds to time. Typically, scales are in ascending order (low → high).
-    /// * `out_width` - Width of the output image in pixels (time axis).
-    /// * `out_height` - Height of the output image in pixels (scale axis).
-    /// * `colormap` - The `Colormap` to use for mapping magnitude values to colors. This can
-    ///   be any predefined colormap (e.g., Turbo, Jet) or custom.
-    #[cfg(feature = "scalogram")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "scalogram")))]
-    pub fn draw_scalogram_color_f64(
-        coeffs: &[Vec<Complex<f64>>],
-        out_width: usize,
-        out_height: usize,
-        colormap: Colormap,
-    ) -> Result<Vec<u8>, ScaletError> {
-        draw_scalogram_color_impl_f64(coeffs, out_width, out_height, colormap)
-    }
 }
 
 /// Specifies how the wavelet scales are distributed in a Continuous Wavelet Transform (CWT).
@@ -351,4 +338,46 @@ pub enum ScaleType {
     /// This is typically used for narrowband analysis where a uniform resolution in the
     /// scale parameter is desired. The `nv` parameter represents the **total number of scales**.
     Linear,
+}
+
+pub struct ScaletFrameMut<'a, T>
+where
+    [T]: ToOwned,
+{
+    pub data: BufferStoreMut<'a, T>,
+    pub width: usize,
+    pub height: usize,
+}
+
+pub struct ScaletFrame<'a, T>
+where
+    [T]: ToOwned,
+{
+    pub data: std::borrow::Cow<'a, [T]>,
+    pub width: usize,
+    pub height: usize,
+}
+
+/// Shared storage type
+pub enum BufferStoreMut<'a, T> {
+    Borrowed(&'a mut [T]),
+    Owned(Vec<T>),
+}
+
+impl<T> BufferStoreMut<'_, T> {
+    #[allow(clippy::should_implement_trait)]
+    pub fn borrow(&self) -> &[T] {
+        match self {
+            Self::Borrowed(p_ref) => p_ref,
+            Self::Owned(vec) => vec,
+        }
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn borrow_mut(&mut self) -> &mut [T] {
+        match self {
+            Self::Borrowed(p_ref) => p_ref,
+            Self::Owned(vec) => vec,
+        }
+    }
 }

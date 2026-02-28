@@ -40,7 +40,7 @@ pub(crate) fn c_mul_fast_conj<T: CwtSample>(a: Complex<T>, b: Complex<T>) -> Com
     Complex::new(re, im)
 }
 
-pub trait SpectrumArithmetic<T> {
+pub trait ComplexArithmetic<T> {
     // input * other.conj() * normalize_value
     fn mul_by_b_conj_normalize(
         &self,
@@ -58,7 +58,7 @@ pub(crate) struct CommonSpectrumArithmetic<T: Default> {
 }
 
 #[allow(unused)]
-impl<T: CwtSample> SpectrumArithmetic<T> for CommonSpectrumArithmetic<T> {
+impl<T: CwtSample> ComplexArithmetic<T> for CommonSpectrumArithmetic<T> {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<T>],
@@ -73,12 +73,12 @@ impl<T: CwtSample> SpectrumArithmetic<T> for CommonSpectrumArithmetic<T> {
 }
 
 pub trait SpectrumArithmeticFactory {
-    fn spectrum_arithmetic() -> Arc<dyn SpectrumArithmetic<Self> + Send + Sync>;
+    fn spectrum_arithmetic() -> Arc<dyn ComplexArithmetic<Self> + Send + Sync>;
 }
 
 impl SpectrumArithmeticFactory for f32 {
-    fn spectrum_arithmetic() -> Arc<dyn SpectrumArithmetic<Self> + Send + Sync> {
-        static Q: OnceLock<Arc<dyn SpectrumArithmetic<f32> + Send + Sync>> = OnceLock::new();
+    fn spectrum_arithmetic() -> Arc<dyn ComplexArithmetic<Self> + Send + Sync> {
+        static Q: OnceLock<Arc<dyn ComplexArithmetic<f32> + Send + Sync>> = OnceLock::new();
         Q.get_or_init(|| {
             #[cfg(all(target_arch = "x86_64", feature = "avx"))]
             {
@@ -116,8 +116,8 @@ impl SpectrumArithmeticFactory for f32 {
 }
 
 impl SpectrumArithmeticFactory for f64 {
-    fn spectrum_arithmetic() -> Arc<dyn SpectrumArithmetic<Self> + Send + Sync> {
-        static Q: OnceLock<Arc<dyn SpectrumArithmetic<f64> + Send + Sync>> = OnceLock::new();
+    fn spectrum_arithmetic() -> Arc<dyn ComplexArithmetic<Self> + Send + Sync> {
+        static Q: OnceLock<Arc<dyn ComplexArithmetic<f64> + Send + Sync>> = OnceLock::new();
         Q.get_or_init(|| {
             #[cfg(all(target_arch = "x86_64", feature = "avx"))]
             {

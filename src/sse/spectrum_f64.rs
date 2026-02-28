@@ -26,7 +26,7 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::spetrum_arith::SpectrumArithmetic;
+use crate::complex_arith::ComplexArithmetic;
 use num_complex::Complex;
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
@@ -36,7 +36,7 @@ use std::arch::x86_64::*;
 #[derive(Copy, Clone, Default)]
 pub(crate) struct Sse42SpectrumF64 {}
 
-impl SpectrumArithmetic<f64> for Sse42SpectrumF64 {
+impl ComplexArithmetic<f64> for Sse42SpectrumF64 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f64>],

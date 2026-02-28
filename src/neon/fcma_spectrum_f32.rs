@@ -26,15 +26,15 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+use crate::complex_arith::ComplexArithmetic;
 use crate::neon::util::{vfcmul_conj_f32, vfcmulq_conj_f32};
-use crate::spetrum_arith::SpectrumArithmetic;
 use num_complex::Complex;
 use std::arch::aarch64::*;
 
 #[derive(Default)]
 pub(crate) struct FcmaSpectrumF32 {}
 
-impl SpectrumArithmetic<f32> for FcmaSpectrumF32 {
+impl ComplexArithmetic<f32> for FcmaSpectrumF32 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f32>],

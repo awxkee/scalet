@@ -27,7 +27,7 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::ScaletError;
-use crate::spetrum_arith::SpectrumArithmeticFactory;
+use crate::complex_arith::SpectrumArithmeticFactory;
 use num_traits::{AsPrimitive, MulAdd, Num, Zero};
 use pxfm::{
     f_exp, f_exp2, f_exp2f, f_expf, f_log2, f_log2f, f_pow, f_powf, f_rsqrt, f_rsqrtf, f_sincos,

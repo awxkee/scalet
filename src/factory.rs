@@ -91,7 +91,7 @@ where
         psi,
         execution_length: filter_size,
         l1_norm: options.l1_norm,
-        spectrum_arithmetic: T::spectrum_arithmetic(),
+        complex_arithmetic: T::spectrum_arithmetic(),
         scratch_length,
     }))
 }
