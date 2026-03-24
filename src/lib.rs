@@ -85,6 +85,10 @@ pub struct CwtOptions {
     /// distribution of energies and component amplitudes than L2.
     /// If false (default true), uses L2 norm.
     pub l1_norm: bool,
+    /// Whether to cache wavelet as well, or only FFTs.
+    /// Depending on your data this may require notable amount on memory.
+    /// Roughly `size_of<data_type>*(~300)*data_length*2` is required.
+    pub full_cache: bool,
 }
 
 impl Default for CwtOptions {
@@ -93,6 +97,7 @@ impl Default for CwtOptions {
             nv: 32,
             scale_type: ScaleType::Log,
             l1_norm: true,
+            full_cache: false,
         }
     }
 }

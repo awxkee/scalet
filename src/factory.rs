@@ -32,6 +32,7 @@ use crate::sample::CwtSample;
 use crate::scale_bounds::find_min_max_scales;
 use crate::scales::{linear_scales, log_piecewise_scales};
 use crate::{CwtExecutor, CwtOptions, CwtWavelet, ScaleType, ScaletError};
+use num_complex::Complex;
 use num_traits::AsPrimitive;
 use std::sync::Arc;
 use zaft::FftDirection;
@@ -83,6 +84,23 @@ where
     let scratch_length = fft_inverse
         .scratch_length()
         .max(fft_forward.scratch_length());
+    let cached_wavelet: Vec<Complex<T>> = if options.full_cache {
+        let mut built_wavelets: Vec<Complex<T>> = Vec::new();
+        built_wavelets
+            .try_reserve_exact(filter_size * scales.len())
+            .map_err(|_| ScaletError::Allocation(filter_size * scales.len()))?;
+        let mut current_psi = vec![T::zero(); filter_size];
+        for &scale in scales.iter() {
+            for (dst, &psi) in current_psi.iter_mut().zip(psi.iter()) {
+                *dst = psi * scale;
+            }
+            let wavelet_fft = wavelet.make_wavelet(&current_psi)?;
+            built_wavelets.extend_from_slice(&wavelet_fft);
+        }
+        built_wavelets
+    } else {
+        vec![]
+    };
     Ok(Arc::new(CommonCwtExecutor {
         wavelet,
         fft_forward,
@@ -93,5 +111,6 @@ where
         l1_norm: options.l1_norm,
         complex_arithmetic: T::spectrum_arithmetic(),
         scratch_length,
+        built_wavelets: cached_wavelet,
     }))
 }

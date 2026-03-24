@@ -45,6 +45,7 @@ pub(crate) struct CommonCwtExecutor<T> {
     pub(crate) execution_length: usize,
     pub(crate) l1_norm: bool,
     pub(crate) scratch_length: usize,
+    pub(crate) built_wavelets: Vec<Complex<T>>,
 }
 
 impl<T: CwtSample> CommonCwtExecutor<T>
@@ -118,61 +119,106 @@ where
             ));
         }
 
-        for (&scale, v_dst) in scales.iter().zip(
-            into.data
-                .borrow_mut()
-                .chunks_exact_mut(self.execution_length),
-        ) {
-            // --- Step 1: Prepare Wavelet Filter for Convolution ---
+        if self.built_wavelets.is_empty() {
+            for (&scale, v_dst) in scales.iter().zip(
+                into.data
+                    .borrow_mut()
+                    .chunks_exact_mut(self.execution_length),
+            ) {
+                // --- Step 1: Prepare Wavelet Filter for Convolution ---
 
-            // Adjust the pre-calculated base phases (self.psi) by the current scale 'a'.
-            // This implements the dilation property of the wavelet in the frequency domain.
-            // The frequency-domain wavelet is scaled by 1/a, and its amplitude is scaled by 'a'.
-            for (dst, &psi) in current_psi.iter_mut().zip(self.psi.iter()) {
-                *dst = psi * scale;
+                // Adjust the pre-calculated base phases (self.psi) by the current scale 'a'.
+                // This implements the dilation property of the wavelet in the frequency domain.
+                // The frequency-domain wavelet is scaled by 1/a, and its amplitude is scaled by 'a'.
+                for (dst, &psi) in current_psi.iter_mut().zip(self.psi.iter()) {
+                    *dst = psi * scale;
+                }
+
+                // Generate the final complex FFT filter for the current scale 'a'.
+                let wavelet_fft = self.wavelet.make_wavelet(&current_psi)?;
+
+                if wavelet_fft.len() != self.execution_length {
+                    return Err(ScaletError::WaveletInvalidSize(
+                        self.execution_length,
+                        wavelet_fft.len(),
+                    ));
+                }
+
+                // --- Step 2: Perform Convolution via Frequency-Domain Multiplication ---
+
+                // Multiply the Signal FFT by the (conjugate of the) Wavelet FFT element-wise.
+                // This is the core convolution theorem: IFFT(F(x) * F(y)) = x * y
+                // additionally we'll normalize in this step as a part of optimization
+
+                // Calculate the overall normalization factor (including the IFFT factor and CWT factor).
+                let norm_factor = if self.l1_norm {
+                    // L1 Normalization (Amplitude/Area): Typically divides by 'a' (scale).
+                    // This current implementation only corrects for the unscaled IFFT (1/N).
+                    1.0f64.as_() / v_dst.len().as_()
+                } else {
+                    // L2 Normalization (Energy)
+                    1.0f64.as_() / (v_dst.len().as_() * scale.sqrt())
+                };
+
+                // input * other.conj() * normalize_value
+                self.complex_arithmetic.mul_by_b_conj_normalize(
+                    v_dst,
+                    signal_fft,
+                    &wavelet_fft,
+                    norm_factor,
+                );
+
+                // --- Step 3: Inverse Transform to the Time Domain ---
+
+                // Perform the Inverse FFT (IFFT) to transform the resulting spectrum back to the time domain.
+                // The result in v_dst is the complex CWT coefficients Wx(a, b) at the current scale 'a'.
+                self.fft_inverse
+                    .execute_with_scratch(v_dst, scratch)
+                    .map_err(|x| ScaletError::FftError(x.to_string()))?;
             }
+        } else {
+            for ((&scale, wavelet_fft), v_dst) in self
+                .scales
+                .iter()
+                .zip(self.built_wavelets.chunks_exact(self.execution_length))
+                .zip(
+                    into.data
+                        .borrow_mut()
+                        .chunks_exact_mut(self.execution_length),
+                )
+            {
+                // --- Step 2: Perform Convolution via Frequency-Domain Multiplication ---
 
-            // Generate the final complex FFT filter for the current scale 'a'.
-            let wavelet_fft = self.wavelet.make_wavelet(&current_psi)?;
+                // Multiply the Signal FFT by the (conjugate of the) Wavelet FFT element-wise.
+                // This is the core convolution theorem: IFFT(F(x) * F(y)) = x * y
+                // additionally we'll normalize in this step as a part of optimization
 
-            if wavelet_fft.len() != self.execution_length {
-                return Err(ScaletError::WaveletInvalidSize(
-                    self.execution_length,
-                    wavelet_fft.len(),
-                ));
+                // Calculate the overall normalization factor (including the IFFT factor and CWT factor).
+                let norm_factor = if self.l1_norm {
+                    // L1 Normalization (Amplitude/Area): Typically divides by 'a' (scale).
+                    // This current implementation only corrects for the unscaled IFFT (1/N).
+                    1.0f64.as_() / v_dst.len().as_()
+                } else {
+                    // L2 Normalization (Energy)
+                    1.0f64.as_() / (v_dst.len().as_() * scale.sqrt())
+                };
+
+                // input * other.conj() * normalize_value
+                self.complex_arithmetic.mul_by_b_conj_normalize(
+                    v_dst,
+                    signal_fft,
+                    wavelet_fft,
+                    norm_factor,
+                );
+
+                // --- Step 3: Inverse Transform to the Time Domain ---
+
+                // Perform the Inverse FFT (IFFT) to transform the resulting spectrum back to the time domain.
+                // The result in v_dst is the complex CWT coefficients Wx(a, b) at the current scale 'a'.
+                self.fft_inverse
+                    .execute_with_scratch(v_dst, scratch)
+                    .map_err(|x| ScaletError::FftError(x.to_string()))?;
             }
-
-            // --- Step 2: Perform Convolution via Frequency-Domain Multiplication ---
-
-            // Multiply the Signal FFT by the (conjugate of the) Wavelet FFT element-wise.
-            // This is the core convolution theorem: IFFT(F(x) * F(y)) = x * y
-            // additionally we'll normalize in this step as a part of optimization
-
-            // Calculate the overall normalization factor (including the IFFT factor and CWT factor).
-            let norm_factor = if self.l1_norm {
-                // L1 Normalization (Amplitude/Area): Typically divides by 'a' (scale).
-                // This current implementation only corrects for the unscaled IFFT (1/N).
-                1.0f64.as_() / v_dst.len().as_()
-            } else {
-                // L2 Normalization (Energy)
-                1.0f64.as_() / (v_dst.len().as_() * scale.sqrt())
-            };
-
-            // input * other.conj() * normalize_value
-            self.complex_arithmetic.mul_by_b_conj_normalize(
-                v_dst,
-                signal_fft,
-                &wavelet_fft,
-                norm_factor,
-            );
-
-            // --- Step 3: Inverse Transform to the Time Domain ---
-
-            // Perform the Inverse FFT (IFFT) to transform the resulting spectrum back to the time domain.
-            // The result in v_dst is the complex CWT coefficients Wx(a, b) at the current scale 'a'.
-            self.fft_inverse
-                .execute_with_scratch(v_dst, scratch)
-                .map_err(|x| ScaletError::FftError(x.to_string()))?;
         }
 
         Ok(())
