@@ -42,6 +42,11 @@ pub enum ScaletError {
     WaveletInvalidSize(usize, usize),
     InvalidFrame(String),
     InvalidScratchSize(usize, usize),
+    DimensionMismatch {
+        expected: (usize, usize),
+        got: (usize, usize),
+    },
+    PointerOverlow,
 }
 
 impl Display for ScaletError {
@@ -63,6 +68,11 @@ impl Display for ScaletError {
             ScaletError::InvalidScratchSize(expected, actual) => {
                 f.write_fmt(format_args!("Scratch size {expected} but it was {actual}"))
             }
+            ScaletError::DimensionMismatch { expected, got } => f.write_fmt(format_args!(
+                "Frame dimensions do not match. expected {:?} but got {:?}",
+                expected, got
+            )),
+            ScaletError::PointerOverlow => f.write_str("Pointer size overflow"),
         }
     }
 }

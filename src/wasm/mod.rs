@@ -1,5 +1,5 @@
 /*
- * // Copyright (c) Radzivon Bartoshyk 12/2025. All rights reserved.
+ * // Copyright (c) Radzivon Bartoshyk 5/2026. All rights reserved.
  * //
  * // Redistribution and use in source and binary forms, with or without modification,
  * // are permitted provided that the following conditions are met:
@@ -26,18 +26,10 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#[cfg(feature = "fcma")]
-mod fcma_spectrum_f32;
-#[cfg(feature = "fcma")]
-mod fcma_spectrum_f64;
-mod mul_spectrum_f64;
 mod spectrum_f32;
+mod spectrum_f64;
 mod stored;
 mod storef;
 
-#[cfg(feature = "fcma")]
-pub(crate) use fcma_spectrum_f32::FcmaSpectrumF32;
-#[cfg(feature = "fcma")]
-pub(crate) use fcma_spectrum_f64::FcmaSpectrumF64;
-pub(crate) use mul_spectrum_f64::NeonSpectrumF64;
-pub(crate) use spectrum_f32::NeonSpectrumF32;
+pub(crate) use spectrum_f32::WasmSpectrumF32;
+pub(crate) use spectrum_f64::WasmSpectrumF64;

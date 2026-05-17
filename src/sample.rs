@@ -30,8 +30,8 @@ use crate::ScaletError;
 use crate::complex_arith::SpectrumArithmeticFactory;
 use num_traits::{AsPrimitive, MulAdd, Num, Zero};
 use pxfm::{
-    f_exp, f_exp2, f_exp2f, f_expf, f_log2, f_log2f, f_pow, f_powf, f_rsqrt, f_rsqrtf, f_sincos,
-    f_sincosf,
+    f_exp, f_exp2, f_exp2f, f_expf, f_log, f_log2, f_log2f, f_logf, f_pow, f_powf, f_rsqrt,
+    f_rsqrtf, f_sincos, f_sincosf,
 };
 use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
@@ -62,6 +62,7 @@ pub trait CwtSample:
     + AsPrimitive<isize>
     + AsPrimitive<f32>
     + SpectrumArithmeticFactory
+    + AsPrimitive<f64>
 {
     fn pow(self, other: Self) -> Self;
     fn exp(self) -> Self;
@@ -81,6 +82,8 @@ pub trait CwtSample:
         fft_direction: FftDirection,
     ) -> Result<Arc<dyn FftExecutor<Self> + Send + Sync>, ScaletError>;
     fn sincos(self) -> (Self, Self);
+    fn round_to_usize(self) -> usize;
+    fn ln(self) -> Self;
     const NEG_INFINITY: Self;
     const INFINITY: Self;
     const PI: Self;
@@ -160,6 +163,16 @@ impl CwtSample for f32 {
     #[inline]
     fn sincos(self) -> (Self, Self) {
         f_sincosf(self)
+    }
+
+    #[inline]
+    fn round_to_usize(self) -> usize {
+        self.round().max(0.) as usize
+    }
+
+    #[inline]
+    fn ln(self) -> Self {
+        f_logf(self)
     }
 
     fn make_fft(
@@ -287,6 +300,16 @@ impl CwtSample for f64 {
     #[inline]
     fn sincos(self) -> (Self, Self) {
         f_sincos(self)
+    }
+
+    #[inline]
+    fn round_to_usize(self) -> usize {
+        self.round().max(0.) as usize
+    }
+
+    #[inline]
+    fn ln(self) -> Self {
+        f_log(self)
     }
 
     fn make_fft(
