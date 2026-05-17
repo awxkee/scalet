@@ -28,6 +28,8 @@
  */
 mod spectrum_f32;
 mod spectrum_f64;
+mod stored;
+mod storef;
 
 pub(crate) use spectrum_f32::AvxSpectrumF32;
 pub(crate) use spectrum_f64::AvxSpectrumF64;

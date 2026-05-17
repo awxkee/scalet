@@ -28,8 +28,12 @@
  */
 use crate::complex_arith::ComplexArithmetic;
 use crate::err::try_vec;
+use crate::mla::fmla;
 use crate::sample::CwtSample;
-use crate::{BufferStoreMut, CwtExecutor, CwtWavelet, ScaletError, ScaletFrameMut};
+use crate::{
+    BufferStoreMut, CwtExecutor, CwtWavelet, ScaletError, ScaletFrame, ScaletFrameMut,
+    SynchrosqueezeOptions,
+};
 use num_complex::Complex;
 use num_traits::{AsPrimitive, Zero};
 use std::sync::Arc;
@@ -108,16 +112,7 @@ where
                 .to_string(),
             ));
         }
-        if into.data.borrow().len() != scales.len() * self.execution_length {
-            return Err(ScaletError::InvalidFrame(
-                format_args!(
-                    "Invalid frame size, expected {} but it was {}",
-                    scales.len() * self.execution_length,
-                    into.data.borrow().len()
-                )
-                .to_string(),
-            ));
-        }
+        into.validate()?;
 
         if self.built_wavelets.is_empty() {
             for (&scale, v_dst) in scales.iter().zip(
@@ -307,6 +302,117 @@ where
 
         let mut signal_fft = input.to_vec();
         self.execute_impl(into, &mut signal_fft, scratch)?;
+        Ok(())
+    }
+
+    fn synchrosqueeze(
+        &self,
+        cwt_frame: &ScaletFrame<'_, Complex<T>>,
+        options: SynchrosqueezeOptions<T>,
+    ) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError> {
+        let total_frame_size = isize::try_from(self.execution_length)
+            .map_err(|_| ScaletError::PointerOverlow)?
+            .checked_mul(
+                isize::try_from(options.num_freq_bins).map_err(|_| ScaletError::PointerOverlow)?,
+            )
+            .ok_or(ScaletError::PointerOverlow)? as usize;
+        let mut frame = ScaletFrameMut {
+            data: BufferStoreMut::Owned(try_vec![Complex::zero(); total_frame_size]),
+            height: options.num_freq_bins,
+            width: self.execution_length,
+        };
+        self.synchrosqueeze_into(cwt_frame, &mut frame, options)?;
+        Ok(frame)
+    }
+
+    fn synchrosqueeze_into(
+        &self,
+        cwt_frame: &ScaletFrame<'_, Complex<T>>,
+        into: &mut ScaletFrameMut<'_, Complex<T>>,
+        options: SynchrosqueezeOptions<T>,
+    ) -> Result<(), ScaletError> {
+        if self.execution_length != cwt_frame.width {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Frame width should be {}, but it is {}",
+                    self.execution_length, cwt_frame.width
+                )
+                .to_string(),
+            ));
+        }
+        cwt_frame.validate()?;
+        if into.height != options.num_freq_bins || into.width != self.execution_length {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Frame height should be {} and width {} but it was {}x{}",
+                    options.num_freq_bins, self.execution_length, into.width, into.height
+                )
+                .to_string(),
+            ));
+        }
+        into.validate()?;
+        let n = self.execution_length;
+        let scales = self.view_scales();
+        if scales.len() != cwt_frame.height {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "CWT frame height is expected to be {} but it was {}",
+                    scales.len(),
+                    cwt_frame.height
+                )
+                .to_string(),
+            ));
+        }
+        let ns = scales.len();
+
+        let data = cwt_frame.data.as_ref();
+
+        let dt: T = 1.0f64.as_() / options.sample_rate;
+
+        let center_freq = self.wavelet.center_frequency();
+        let f_min: T = center_freq / (scales[ns - 1] / options.sample_rate);
+        let f_max: T = center_freq / (scales[0] / options.sample_rate);
+
+        let log_ratio = (f_max / f_min).ln() / (options.num_freq_bins - 1).as_();
+        let const_weight: T = (2.0f64.ln() / options.nv as f64).as_();
+
+        for row in data.chunks_exact(cwt_frame.width) {
+            for (b, &w_ab) in row.iter().enumerate() {
+                let norm_sqr = fmla(w_ab.re, w_ab.re, w_ab.im * w_ab.im);
+                let magnitude = norm_sqr.sqrt();
+
+                if magnitude < options.threshold {
+                    continue;
+                }
+
+                let (w_prev, w_next, divisor) = match b {
+                    0 => (row[b], row[b + 1], dt),
+                    b if b == n - 1 => (row[b - 1], row[b], dt),
+                    _ => (row[b - 1], row[b + 1], 2.0f64.as_() * dt),
+                };
+
+                let dw_db = (w_next - w_prev) / divisor;
+
+                let conj_w = w_ab.conj();
+                let product = conj_w * dw_db;
+                let omega_hz: T = (product.im / (T::TWO_PI * norm_sqr)).abs();
+
+                if omega_hz < f_min || omega_hz > f_max {
+                    continue; // outside our frequency range
+                }
+
+                let bin = (options.num_freq_bins - 1)
+                    - ((omega_hz / f_min).ln() / log_ratio)
+                        .round_to_usize()
+                        .clamp(0, options.num_freq_bins - 1);
+
+                let sst_data = into.data.borrow_mut();
+
+                // inside loop, replace da_weight with:
+                sst_data[bin * n + b].re = fmla(w_ab.re, const_weight, sst_data[bin * n + b].re);
+                sst_data[bin * n + b].im = fmla(w_ab.im, const_weight, sst_data[bin * n + b].im);
+            }
+        }
         Ok(())
     }
 

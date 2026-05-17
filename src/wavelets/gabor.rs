@@ -114,4 +114,8 @@ where
 
         Ok(out)
     }
+
+    fn center_frequency(&self) -> T {
+        self.mu / T::TWO_PI
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * // Copyright (c) Radzivon Bartoshyk 9/2025. All rights reserved.
+ * // Copyright (c) Radzivon Bartoshyk 5/2026. All rights reserved.
  * //
  * // Redistribution and use in source and binary forms, with or without modification,
  * // are permitted provided that the following conditions are met:
@@ -28,14 +28,14 @@
  */
 
 use crate::complex_arith::ComplexArithmetic;
-use crate::neon::stored::NeonStoreD;
+use crate::wasm::stored::WasmStoreD;
 use num_complex::Complex;
 use std::ops::Mul;
 
 #[derive(Copy, Clone, Default, Debug)]
-pub(crate) struct NeonSpectrumF64 {}
+pub(crate) struct WasmSpectrumF64 {}
 
-impl ComplexArithmetic<f64> for NeonSpectrumF64 {
+impl ComplexArithmetic<f64> for WasmSpectrumF64 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f64>],
@@ -43,12 +43,12 @@ impl ComplexArithmetic<f64> for NeonSpectrumF64 {
         other: &[Complex<f64>],
         normalize_value: f64,
     ) {
-        unsafe { self.mul_by_b_conj_normalize_impl(dst, input, other, normalize_value) }
+        self.mul_by_b_conj_normalize_impl(dst, input, other, normalize_value)
     }
 }
 
-impl NeonSpectrumF64 {
-    #[target_feature(enable = "neon")]
+impl WasmSpectrumF64 {
+    #[target_feature(enable = "simd128")]
     fn mul_by_b_conj_normalize_impl(
         &self,
         dst: &mut [Complex<f64>],
@@ -56,8 +56,8 @@ impl NeonSpectrumF64 {
         other: &[Complex<f64>],
         normalize_value: f64,
     ) {
-        let v_norm_factor = NeonStoreD::dup(normalize_value);
-        let conj_factors = NeonStoreD::conj_flags();
+        let v_norm_factor = WasmStoreD::dup(normalize_value);
+        let conj_factors = WasmStoreD::conj_flags();
 
         for ((dst, input), other) in dst
             .as_chunks_mut::<4>()
@@ -66,25 +66,25 @@ impl NeonSpectrumF64 {
             .zip(input.as_chunks::<4>().0.iter())
             .zip(other.as_chunks::<4>().0.iter())
         {
-            let vd0 = NeonStoreD::load(input);
-            let vd1 = NeonStoreD::load(&input[1..]);
-            let vd2 = NeonStoreD::load(&input[2..]);
-            let vd3 = NeonStoreD::load(&input[3..]);
+            let vd0 = WasmStoreD::load(input);
+            let vd1 = WasmStoreD::load(&input[1..]);
+            let vd2 = WasmStoreD::load(&input[2..]);
+            let vd3 = WasmStoreD::load(&input[3..]);
 
-            let mut vk0 = NeonStoreD::load(other);
-            let mut vk1 = NeonStoreD::load(&other[1..]);
-            let mut vk2 = NeonStoreD::load(&other[2..]);
-            let mut vk3 = NeonStoreD::load(&other[3..]);
+            let mut vk0 = WasmStoreD::load(other);
+            let mut vk1 = WasmStoreD::load(&other[1..]);
+            let mut vk2 = WasmStoreD::load(&other[2..]);
+            let mut vk3 = WasmStoreD::load(&other[3..]);
 
             vk0 = vk0.xor(conj_factors);
             vk1 = vk1.xor(conj_factors);
             vk2 = vk2.xor(conj_factors);
             vk3 = vk3.xor(conj_factors);
 
-            let p0 = NeonStoreD::mul(NeonStoreD::mul_by_complex(vd0, vk0), v_norm_factor);
-            let p1 = NeonStoreD::mul(NeonStoreD::mul_by_complex(vd1, vk1), v_norm_factor);
-            let p2 = NeonStoreD::mul(NeonStoreD::mul_by_complex(vd2, vk2), v_norm_factor);
-            let p3 = NeonStoreD::mul(NeonStoreD::mul_by_complex(vd3, vk3), v_norm_factor);
+            let p0 = WasmStoreD::mul(WasmStoreD::mul_by_complex(vd0, vk0), v_norm_factor);
+            let p1 = WasmStoreD::mul(WasmStoreD::mul_by_complex(vd1, vk1), v_norm_factor);
+            let p2 = WasmStoreD::mul(WasmStoreD::mul_by_complex(vd2, vk2), v_norm_factor);
+            let p3 = WasmStoreD::mul(WasmStoreD::mul_by_complex(vd3, vk3), v_norm_factor);
 
             p0.write(dst);
             p1.write(&mut dst[1..]);
@@ -101,12 +101,12 @@ impl NeonSpectrumF64 {
             .zip(input_rem.iter())
             .zip(other_rem.iter())
         {
-            let v0 = NeonStoreD::load1(input);
-            let mut v1 = NeonStoreD::load1(other);
+            let v0 = WasmStoreD::load1(input);
+            let mut v1 = WasmStoreD::load1(other);
 
             v1 = v1.xor(conj_factors);
 
-            let p1 = NeonStoreD::mul(NeonStoreD::mul_by_complex(v0, v1), v_norm_factor);
+            let p1 = WasmStoreD::mul(WasmStoreD::mul_by_complex(v0, v1), v_norm_factor);
             p1.write1(dst);
         }
     }

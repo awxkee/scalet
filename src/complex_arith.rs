@@ -106,7 +106,15 @@ impl SpectrumArithmeticFactory for f32 {
                 use crate::neon::NeonSpectrumF32;
                 Arc::new(NeonSpectrumF32::default())
             }
-            #[cfg(not(all(target_arch = "aarch64", feature = "neon")))]
+            #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+            {
+                use crate::wasm::WasmSpectrumF32;
+                Arc::new(WasmSpectrumF32::default())
+            }
+            #[cfg(not(any(
+                all(target_arch = "aarch64", feature = "neon"),
+                all(target_arch = "wasm32", feature = "wasm")
+            )))]
             {
                 Arc::new(CommonSpectrumArithmetic::default())
             }
@@ -145,7 +153,15 @@ impl SpectrumArithmeticFactory for f64 {
                 use crate::neon::NeonSpectrumF64;
                 Arc::new(NeonSpectrumF64::default())
             }
-            #[cfg(not(all(target_arch = "aarch64", feature = "neon")))]
+            #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+            {
+                use crate::wasm::WasmSpectrumF64;
+                Arc::new(WasmSpectrumF64::default())
+            }
+            #[cfg(not(any(
+                all(target_arch = "aarch64", feature = "neon"),
+                all(target_arch = "wasm32", feature = "wasm")
+            )))]
             {
                 Arc::new(CommonSpectrumArithmetic::default())
             }

@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [ "1.87.0", stable ]
+        rust: [ "1.89.0", stable ]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -38,12 +38,29 @@ jobs:
       - run: RUSTFLAGS="-C target-feature=+avx2" cargo +nightly build --target x86_64-unknown-linux-gnu --no-default-features --features avx
       - run: RUSTFLAGS="-C target-feature=+simd128" cargo build --target wasm32-unknown-unknown
 
+  tests_wasm:
+    name: Tests WASM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "latest"
+      - name: Run test suites with wasm-pack
+        run: wasm-pack test --node
+
   tests_arm:
     name: Tests
     strategy:
       matrix:
         features: [ "", neon, fcma ]
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -81,8 +98,37 @@ jobs:
 
   clippy_arm:
     name: Clippy ARM
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo clippy -- -D warnings
+
+  tests_x86_sse_isolated:
+    name: Testing x86 SSE isolated
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: |
+          sudo apt-get -y update
+          sudo apt-get install -y qemu-user
+      - run: |
+          failed=0
+          tests=$(cargo +nightly test --lib -- --list 2>/dev/null | grep ': test' | sed 's/: test//')
+          while read -r test; do
+              rc=0
+              echo "Running: $test"
+              output=$(RUSTFLAGS="-C target-feature=+sse4.1,-avx,-avx2,-fma" \
+              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="qemu-x86_64 -cpu Nehalem" SHORT_TEST=yes \
+              cargo +nightly test --lib -- "$test" --exact 2>&1) || rc=$?
+              echo "$output" | grep -E "FAILED|ok|signal 4"
+              if [ "${rc:-0}" -ne 0 ]; then
+                echo "❌ Test failed: $test"
+                echo "$output"
+                failed=1
+              else
+                echo "$output" | grep -E "ok|signal 4"
+              fi
+          done <<< "$tests"
+          exit $failed
