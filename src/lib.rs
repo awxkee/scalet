@@ -49,6 +49,8 @@ mod scale_bounds;
 mod scales;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "sse"))]
 mod sse;
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+mod wasm;
 mod wavelets;
 
 use crate::factory::create_cwt;
@@ -100,6 +102,13 @@ impl Default for CwtOptions {
             full_cache: false,
         }
     }
+}
+
+pub struct SynchrosqueezeOptions<T> {
+    pub sample_rate: T,
+    pub num_freq_bins: usize,
+    pub threshold: T,
+    pub nv: usize,
 }
 
 /// Defines the core functionality for executing a Continuous Wavelet Transform (CWT).
@@ -169,6 +178,20 @@ where
         into: &mut ScaletFrameMut<'_, Complex<T>>,
         scratch: &mut [Complex<T>],
     ) -> Result<(), ScaletError>;
+
+    fn synchrosqueeze(
+        &self,
+        cwt_frame: &ScaletFrame<'_, Complex<T>>,
+        options: SynchrosqueezeOptions<T>,
+    ) -> Result<ScaletFrameMut<'_, Complex<T>>, ScaletError>;
+
+    fn synchrosqueeze_into(
+        &self,
+        cwt_frame: &ScaletFrame<'_, Complex<T>>,
+        into: &mut ScaletFrameMut<'_, Complex<T>>,
+        options: SynchrosqueezeOptions<T>,
+    ) -> Result<(), ScaletError>;
+
     /// Returns the expected length of the input signal this executor was built for.
     ///
     /// This is typically used to pre-calculate necessary internal parameters or
@@ -347,7 +370,7 @@ pub enum ScaleType {
 
 pub struct ScaletFrameMut<'a, T>
 where
-    [T]: ToOwned,
+    [T]: ToOwned<Owned = Vec<T>>,
 {
     pub data: BufferStoreMut<'a, T>,
     pub width: usize,
@@ -356,11 +379,132 @@ where
 
 pub struct ScaletFrame<'a, T>
 where
-    [T]: ToOwned,
+    [T]: ToOwned<Owned = Vec<T>>,
 {
     pub data: std::borrow::Cow<'a, [T]>,
     pub width: usize,
     pub height: usize,
+}
+
+impl<'a, T> ScaletFrameMut<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    pub fn validate(&self) -> Result<(), ScaletError> {
+        let total_size = isize::try_from(self.width)
+            .map_err(|_| ScaletError::PointerOverlow)?
+            .checked_mul(isize::try_from(self.height).map_err(|_| ScaletError::PointerOverlow)?)
+            .ok_or(ScaletError::PointerOverlow)?;
+
+        _ = total_size
+            .checked_mul(size_of::<T>() as isize)
+            .ok_or(ScaletError::PointerOverlow)? as usize;
+        if self.data.borrow().len() != total_size as usize {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Invalid frame size, expected {} but it was {}",
+                    total_size,
+                    self.data.borrow().len()
+                )
+                .to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn as_ref(&'a self) -> ScaletFrame<'a, T>
+    where
+        T: Clone,
+    {
+        ScaletFrame {
+            data: std::borrow::Cow::Borrowed(self.data.borrow()),
+            width: self.width,
+            height: self.height,
+        }
+    }
+
+    pub fn into_ref(self) -> ScaletFrame<'a, T>
+    where
+        T: Clone,
+        <[T] as ToOwned>::Owned: From<Vec<T>>,
+    {
+        ScaletFrame {
+            data: std::borrow::Cow::Owned(self.data.borrow().to_vec()),
+            width: self.width,
+            height: self.height,
+        }
+    }
+
+    pub fn matches(&self, other: &ScaletFrame<'_, T>) -> Result<(), ScaletError> {
+        if self.width == other.width && self.height == other.height {
+            Ok(())
+        } else {
+            Err(ScaletError::DimensionMismatch {
+                expected: (self.width, self.height),
+                got: (other.width, other.height),
+            })
+        }
+    }
+
+    pub fn matches_transposed(&self, other: &ScaletFrame<'_, T>) -> Result<(), ScaletError> {
+        if self.width == other.height && self.height == other.width {
+            Ok(())
+        } else {
+            Err(ScaletError::DimensionMismatch {
+                expected: (self.width, self.height),
+                got: (other.width, other.height),
+            })
+        }
+    }
+}
+
+impl<'a, T> ScaletFrame<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    pub fn validate(&self) -> Result<(), ScaletError> {
+        let total_size = isize::try_from(self.width)
+            .map_err(|_| ScaletError::PointerOverlow)?
+            .checked_mul(isize::try_from(self.height).map_err(|_| ScaletError::PointerOverlow)?)
+            .ok_or(ScaletError::PointerOverlow)?;
+
+        _ = total_size
+            .checked_mul(size_of::<T>() as isize)
+            .ok_or(ScaletError::PointerOverlow)? as usize;
+        if self.data.as_ref().len() != total_size as usize {
+            return Err(ScaletError::InvalidFrame(
+                format_args!(
+                    "Invalid frame size, expected {} but it was {}",
+                    total_size,
+                    self.data.as_ref().len()
+                )
+                .to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn matches(&self, other: &ScaletFrameMut<'_, T>) -> Result<(), ScaletError> {
+        if self.width == other.width && self.height == other.height {
+            Ok(())
+        } else {
+            Err(ScaletError::DimensionMismatch {
+                expected: (self.width, self.height),
+                got: (other.width, other.height),
+            })
+        }
+    }
+
+    pub fn matches_transposed(&self, other: &ScaletFrameMut<'_, T>) -> Result<(), ScaletError> {
+        if self.width == other.height && self.height == other.width {
+            Ok(())
+        } else {
+            Err(ScaletError::DimensionMismatch {
+                expected: (self.width, self.height),
+                got: (other.width, other.height),
+            })
+        }
+    }
 }
 
 /// Shared storage type
@@ -383,6 +527,667 @@ impl<T> BufferStoreMut<'_, T> {
         match self {
             Self::Borrowed(p_ref) => p_ref,
             Self::Owned(vec) => vec,
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[cfg(test)]
+macro_rules! platform_test {
+    ($(#[$meta:meta])* fn $name:ident() $body:block) => {
+        #[wasm_bindgen_test::wasm_bindgen_test]
+        $(#[$meta])*
+        fn $name() $body
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(test)]
+macro_rules! platform_test {
+    ($(#[$meta:meta])* fn $name:ident() $body:block) => {
+        #[test]
+        $(#[$meta])*
+        fn $name() $body
+    };
+}
+
+#[cfg(test)]
+mod cwt_tests {
+    use super::*;
+    use num_complex::Complex;
+    use std::f32::consts::PI as PI32;
+    use std::f64::consts::PI as PI64;
+    use std::sync::Arc;
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_node_experimental);
+
+    // ------------------------------------------------------------------ //
+    // Helpers                                                              //
+    // ------------------------------------------------------------------ //
+
+    fn sine_f32(freq: f32, sample_rate: f32, length: usize) -> Vec<f32> {
+        (0..length)
+            .map(|i| (2.0 * PI32 * freq * i as f32 / sample_rate).sin())
+            .collect()
+    }
+
+    fn sine_f64(freq: f64, sample_rate: f64, length: usize) -> Vec<f64> {
+        (0..length)
+            .map(|i| (2.0 * PI64 * freq * i as f64 / sample_rate).sin())
+            .collect()
+    }
+
+    fn complex_sine_f32(freq: f32, sample_rate: f32, length: usize) -> Vec<Complex<f32>> {
+        (0..length)
+            .map(|i| {
+                let phase = 2.0 * PI32 * freq * i as f32 / sample_rate;
+                Complex::new(phase.cos(), phase.sin())
+            })
+            .collect()
+    }
+
+    fn energy(frame: &ScaletFrameMut<'_, Complex<f32>>) -> Vec<f32> {
+        let data = frame.data.borrow();
+        let w = frame.width;
+        (0..frame.height)
+            .map(|row| {
+                data[row * w..(row + 1) * w]
+                    .iter()
+                    .map(|c| c.norm_sqr())
+                    .sum::<f32>()
+            })
+            .collect()
+    }
+
+    fn energy_f64(frame: &ScaletFrameMut<'_, Complex<f64>>) -> Vec<f64> {
+        let data = frame.data.borrow();
+        let w = frame.width;
+        (0..frame.height)
+            .map(|row| {
+                data[row * w..(row + 1) * w]
+                    .iter()
+                    .map(|c| c.norm_sqr())
+                    .sum::<f64>()
+            })
+            .collect()
+    }
+
+    fn peak_scale_index(energies: &[f32]) -> usize {
+        energies
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i)
+            .unwrap_or(0)
+    }
+
+    fn default_opts() -> CwtOptions {
+        CwtOptions {
+            nv: 16,
+            scale_type: ScaleType::Log,
+            l1_norm: true,
+            full_cache: false,
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Basic construction                                                   //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_make_morlet_f32_succeeds() {
+            let result = Scalet::make_morlet_f32(256, default_opts());
+            assert!(result.is_ok(), "make_morlet_f32 should succeed");
+        }
+    }
+
+    platform_test! {
+        fn test_make_morlet_f64_succeeds() {
+            let result = Scalet::make_morlet_f64(256, default_opts());
+            assert!(result.is_ok(), "make_morlet_f64 should succeed");
+        }
+    }
+
+    platform_test! {
+        fn test_reported_length_matches_input() {
+            let n = 512;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            assert_eq!(cwt.length(), n);
+        }
+    }
+
+    platform_test! {
+        fn test_scales_nonempty() {
+            let cwt = Scalet::make_morlet_f32(256, default_opts()).unwrap();
+            assert!(!cwt.view_scales().is_empty(), "scales should be non-empty");
+        }
+    }
+
+    platform_test! {
+        fn test_scales_all_positive() {
+            let cwt = Scalet::make_morlet_f32(256, default_opts()).unwrap();
+            assert!(
+                cwt.view_scales().iter().all(|&s| s > 0.0),
+                "all scales must be positive"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Output shape                                                         //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_output_width_equals_input_length() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            assert_eq!(frame.width, n, "output width must equal signal length");
+        }
+    }
+
+    platform_test! {
+        fn test_output_height_equals_num_scales() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            assert_eq!(
+                frame.height,
+                cwt.view_scales().len(),
+                "output height must equal number of scales"
+            );
+        }
+    }
+
+    platform_test! {
+        fn test_output_data_length_is_width_times_height() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            assert_eq!(
+                frame.data.borrow().len(),
+                frame.width * frame.height,
+                "data buffer size must be width*height"
+            );
+        }
+    }
+
+    platform_test! {
+        fn test_frame_validates_ok() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            assert!(frame.validate().is_ok(), "frame.validate() must pass");
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Zero signal                                                          //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_zero_signal_produces_near_zero_output_f32() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = vec![0.0f32; n];
+            let frame = cwt.execute(&signal).unwrap();
+            let max_amp = frame
+                .data
+                .borrow()
+                .iter()
+                .map(|c| c.norm())
+                .fold(0.0f32, f32::max);
+            assert!(
+                max_amp < 1e-6,
+                "zero input should produce near-zero output, got {max_amp}"
+            );
+        }
+    }
+
+    platform_test! {
+        fn test_zero_signal_produces_near_zero_output_f64() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f64(n, default_opts()).unwrap();
+            let signal = vec![0.0f64; n];
+            let frame = cwt.execute(&signal).unwrap();
+            let max_amp = frame
+                .data
+                .borrow()
+                .iter()
+                .map(|c| c.norm())
+                .fold(0.0f64, f64::max);
+            assert!(max_amp < 1e-12, "zero f64 input should give ~zero output");
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Frequency localisation                                               //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_peak_energy_at_correct_frequency() {
+            let n = 512;
+            let sample_rate = 512.0f32;
+            let target_freq = 32.0f32;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(target_freq, sample_rate, n);
+            let frame = cwt.execute(&signal).unwrap();
+            let energies = energy(&frame);
+            let peak_idx = peak_scale_index(&energies);
+
+            let scales = cwt.view_scales().to_vec();
+            let freqs = Scalet::scales_to_frequencies_f32(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                sample_rate,
+            )
+            .unwrap();
+
+            let peak_freq = freqs[peak_idx];
+            let ratio = (peak_freq - target_freq).abs() / target_freq;
+            assert!(
+                ratio < 0.25,
+                "peak frequency {peak_freq:.2} Hz should be within 25% of {target_freq} Hz"
+            );
+        }
+    }
+
+    platform_test! {
+        fn test_two_frequencies_produce_two_peaks() {
+            let n = 512;
+            let sample_rate = 512.0f32;
+            let (f1, f2) = (16.0f32, 64.0f32);
+            let signal: Vec<f32> = (0..n)
+                .map(|i| {
+                    let t = i as f32 / sample_rate;
+                    (2.0 * PI32 * f1 * t).sin() + (2.0 * PI32 * f2 * t).sin()
+                })
+                .collect();
+
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let frame = cwt.execute(&signal).unwrap();
+            let energies = energy(&frame);
+
+            let mut sorted: Vec<(usize, f32)> = energies.iter().cloned().enumerate().collect();
+            sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+            let peak1 = sorted[0].0;
+            let peak2 = sorted
+                .iter()
+                .find(|&&(idx, _)| idx.abs_diff(peak1) > 2)
+                .map(|&(idx, _)| idx);
+
+            assert!(
+                peak2.is_some(),
+                "expected two separated energy peaks for two-frequency input"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Linearity                                                            //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_linearity_f32() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let s1 = sine_f32(10.0, 256.0, n);
+            let s2 = sine_f32(30.0, 256.0, n);
+            let sum: Vec<f32> = s1.iter().zip(s2.iter()).map(|(a, b)| a + b).collect();
+
+            let f1 = cwt.execute(&s1).unwrap();
+            let f2 = cwt.execute(&s2).unwrap();
+            let fsum = cwt.execute(&sum).unwrap();
+
+            let d1 = f1.data.borrow();
+            let d2 = f2.data.borrow();
+            let ds = fsum.data.borrow();
+
+            let max_err = d1
+                .iter()
+                .zip(d2.iter())
+                .zip(ds.iter())
+                .map(|((a, b), s)| ((*a + *b) - *s).norm())
+                .fold(0.0f32, f32::max);
+
+            assert!(max_err < 1e-4, "CWT must be linear: max deviation was {max_err}");
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Scaling                                                              //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_double_amplitude_doubles_output_f32() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let s = sine_f32(20.0, 256.0, n);
+            let s2: Vec<f32> = s.iter().map(|x| x * 2.0).collect();
+
+            let f1 = cwt.execute(&s).unwrap();
+            let f2 = cwt.execute(&s2).unwrap();
+
+            let norm1: f32 = f1.data.borrow().iter().map(|c| c.norm()).sum();
+            let norm2: f32 = f2.data.borrow().iter().map(|c| c.norm()).sum();
+
+            let ratio = norm2 / norm1;
+            assert!(
+                (ratio - 2.0).abs() < 0.1,
+                "doubling amplitude should double CWT magnitude, got ratio {ratio:.3}"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Complex input                                                        //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_execute_complex_returns_correct_shape() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = complex_sine_f32(20.0, 256.0, n);
+            let frame = cwt.execute_complex(&signal).unwrap();
+            assert_eq!(frame.width, n);
+            assert_eq!(frame.height, cwt.view_scales().len());
+        }
+    }
+
+    platform_test! {
+        fn test_execute_complex_zero_input() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = vec![Complex::new(0.0f32, 0.0); n];
+            let frame = cwt.execute_complex(&signal).unwrap();
+            let max_amp = frame
+                .data
+                .borrow()
+                .iter()
+                .map(|c| c.norm())
+                .fold(0.0f32, f32::max);
+            assert!(max_amp < 1e-6);
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Scratch buffer API                                                   //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_execute_with_scratch_matches_execute() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(20.0, 256.0, n);
+            let ref_frame = cwt.execute(&signal).unwrap();
+
+            let num_scales = cwt.view_scales().len();
+            let mut out_data = vec![Complex::new(0.0f32, 0.0); n * num_scales];
+            let mut scratch = vec![Complex::new(0.0f32, 0.0); cwt.scratch_length()];
+            let mut frame = ScaletFrameMut {
+                data: BufferStoreMut::Borrowed(out_data.as_mut_slice()),
+                width: n,
+                height: num_scales,
+            };
+
+            cwt.execute_with_scratch(&signal, &mut frame, &mut scratch).unwrap();
+
+            let max_err = ref_frame
+                .data
+                .borrow()
+                .iter()
+                .zip(frame.data.borrow().iter())
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0f32, f32::max);
+
+            assert!(max_err < 1e-5, "scratch API must match execute(), max diff: {max_err}");
+        }
+    }
+
+    platform_test! {
+        fn test_execute_complex_with_scratch_matches_execute_complex() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = complex_sine_f32(20.0, 256.0, n);
+            let ref_frame = cwt.execute_complex(&signal).unwrap();
+
+            let num_scales = cwt.view_scales().len();
+            let mut out_data = vec![Complex::new(0.0f32, 0.0); n * num_scales];
+            let mut scratch = vec![Complex::new(0.0f32, 0.0); cwt.scratch_length()];
+            let mut frame = ScaletFrameMut {
+                data: BufferStoreMut::Borrowed(out_data.as_mut_slice()),
+                width: n,
+                height: num_scales,
+            };
+
+            cwt.execute_complex_with_scratch(&signal, &mut frame, &mut scratch).unwrap();
+
+            let max_err = ref_frame
+                .data
+                .borrow()
+                .iter()
+                .zip(frame.data.borrow().iter())
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0f32, f32::max);
+
+            assert!(max_err < 1e-5);
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // ScaletFrame / validation helpers                                     //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_frame_as_ref_preserves_dimensions() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            let r = frame.as_ref();
+            assert_eq!(r.width, frame.width);
+            assert_eq!(r.height, frame.height);
+        }
+    }
+
+    platform_test! {
+        fn test_frame_matches_itself() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let signal = sine_f32(10.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            let r = frame.as_ref();
+            assert!(frame.matches(&r).is_ok());
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Scale type: Linear                                                   //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_linear_scale_type_succeeds() {
+            let opts = CwtOptions {
+                nv: 32,
+                scale_type: ScaleType::Linear,
+                l1_norm: true,
+                full_cache: false,
+            };
+            let cwt = Scalet::make_morlet_f32(256, opts).unwrap();
+            let signal = sine_f32(10.0, 256.0, 256);
+            let frame = cwt.execute(&signal).unwrap();
+            assert!(frame.validate().is_ok());
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // L1 vs L2 norm                                                        //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_l1_and_l2_norm_both_succeed() {
+            let signal = sine_f32(10.0, 256.0, 256);
+            for l1_norm in [true, false] {
+                let opts = CwtOptions {
+                    nv: 16,
+                    scale_type: ScaleType::Log,
+                    l1_norm,
+                    full_cache: false,
+                };
+                let cwt = Scalet::make_morlet_f32(256, opts).unwrap();
+                let frame = cwt.execute(&signal).unwrap();
+                assert!(frame.validate().is_ok(), "failed with l1_norm={l1_norm}");
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // scales_to_frequencies                                                //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_scales_to_frequencies_f32_length_matches() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let scales = cwt.view_scales().to_vec();
+            let freqs = Scalet::scales_to_frequencies_f32(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                256.0,
+            )
+            .unwrap();
+            assert_eq!(freqs.len(), scales.len());
+        }
+    }
+
+    platform_test! {
+        fn test_scales_to_frequencies_f32_all_positive() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let scales = cwt.view_scales().to_vec();
+            let freqs = Scalet::scales_to_frequencies_f32(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                256.0,
+            )
+            .unwrap();
+            assert!(freqs.iter().all(|&f| f > 0.0), "all converted frequencies must be positive");
+        }
+    }
+
+    platform_test! {
+        fn test_scales_to_frequencies_f64_length_matches() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f64(n, default_opts()).unwrap();
+            let scales = cwt.view_scales().to_vec();
+            let freqs = Scalet::scales_to_frequencies_f64(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                256.0,
+            )
+            .unwrap();
+            assert_eq!(freqs.len(), scales.len());
+        }
+    }
+
+    platform_test! {
+        fn test_scales_ascending_frequencies_descending() {
+            let n = 512;
+            let cwt = Scalet::make_morlet_f32(n, default_opts()).unwrap();
+            let scales = cwt.view_scales().to_vec();
+            let scales_asc = scales.windows(2).all(|w| w[0] <= w[1]);
+            if !scales_asc {
+                return;
+            }
+            let freqs = Scalet::scales_to_frequencies_f32(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                512.0,
+            )
+            .unwrap();
+            let freqs_desc = freqs.windows(2).all(|w| w[0] >= w[1]);
+            assert!(freqs_desc, "ascending scales must yield descending frequencies");
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // full_cache option                                                    //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_full_cache_produces_same_result_as_no_cache() {
+            let n = 256;
+            let signal = sine_f32(20.0, 256.0, n);
+            let cwt_no_cache = Scalet::make_morlet_f32(n, CwtOptions { full_cache: false, ..default_opts() }).unwrap();
+            let cwt_cache    = Scalet::make_morlet_f32(n, CwtOptions { full_cache: true,  ..default_opts() }).unwrap();
+            let f1 = cwt_no_cache.execute(&signal).unwrap();
+            let f2 = cwt_cache.execute(&signal).unwrap();
+            let max_err = f1.data.borrow()
+                .iter()
+                .zip(f2.data.borrow().iter())
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0f32, f32::max);
+            assert!(max_err < 1e-5, "full_cache should not change results, max diff: {max_err}");
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // f64 smoke test                                                       //
+    // ------------------------------------------------------------------ //
+
+    platform_test! {
+        fn test_f64_execute_basic() {
+            let n = 256;
+            let cwt = Scalet::make_morlet_f64(n, default_opts()).unwrap();
+            let signal = sine_f64(20.0, 256.0, n);
+            let frame = cwt.execute(&signal).unwrap();
+            assert_eq!(frame.width, n);
+            assert!(frame.validate().is_ok());
+            let total_energy: f64 = frame.data.borrow().iter().map(|c| c.norm_sqr()).sum();
+            assert!(total_energy > 0.0, "f64 CWT output should have nonzero energy");
+        }
+    }
+
+    platform_test! {
+        fn test_f64_peak_at_correct_frequency() {
+            let n = 512;
+            let sample_rate = 512.0f64;
+            let target_freq = 32.0f64;
+            let cwt = Scalet::make_morlet_f64(n, default_opts()).unwrap();
+            let signal = sine_f64(target_freq, sample_rate, n);
+            let frame = cwt.execute(&signal).unwrap();
+
+            let energies = energy_f64(&frame);
+            let peak_idx = energies
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .map(|(i, _)| i)
+                .unwrap();
+
+            let scales = cwt.view_scales().to_vec();
+            let freqs = Scalet::scales_to_frequencies_f64(
+                Arc::new(MorletWavelet::default()),
+                &scales,
+                n,
+                sample_rate,
+            )
+            .unwrap();
+
+            let peak_freq = freqs[peak_idx];
+            let ratio = (peak_freq - target_freq).abs() / target_freq;
+            assert!(ratio < 0.25, "f64 peak at {peak_freq:.2} Hz, expected ~{target_freq} Hz");
         }
     }
 }

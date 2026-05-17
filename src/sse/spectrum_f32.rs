@@ -27,11 +27,13 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::complex_arith::ComplexArithmetic;
+use crate::sse::storef::SseStoreF;
 use num_complex::Complex;
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::ops::Mul;
 
 #[inline]
 #[target_feature(enable = "sse4.2")]
@@ -68,79 +70,79 @@ impl Sse42SpectrumF32 {
         other: &[Complex<f32>],
         normalize_value: f32,
     ) {
-        unsafe {
-            let v_norm_factor = _mm_set1_ps(normalize_value);
+        let v_norm_factor = SseStoreF::dup(normalize_value);
 
-            static CONJ_FACTORS: [f32; 4] = [0.0, -0.0, 0.0, -0.0];
-            let conj_factors = _mm_loadu_ps(CONJ_FACTORS.as_ptr());
+        let conj_factors = SseStoreF::conj_flags();
 
-            for ((dst, input), other) in dst
-                .chunks_exact_mut(8)
-                .zip(input.chunks_exact(8))
-                .zip(other.chunks_exact(8))
-            {
-                let vd0 = _mm_loadu_ps(input.as_ptr().cast());
-                let vd1 = _mm_loadu_ps(input.get_unchecked(2..).as_ptr().cast());
-                let vd2 = _mm_loadu_ps(input.get_unchecked(4..).as_ptr().cast());
-                let vd3 = _mm_loadu_ps(input.get_unchecked(6..).as_ptr().cast());
+        for ((dst, input), other) in dst
+            .as_chunks_mut::<8>()
+            .0
+            .iter_mut()
+            .zip(input.as_chunks::<8>().0.iter())
+            .zip(other.as_chunks::<8>().0.iter())
+        {
+            let vd0 = SseStoreF::load(input);
+            let vd1 = SseStoreF::load(&input[2..]);
+            let vd2 = SseStoreF::load(&input[4..]);
+            let vd3 = SseStoreF::load(&input[6..]);
 
-                let mut vk0 = _mm_loadu_ps(other.as_ptr().cast());
-                let mut vk1 = _mm_loadu_ps(other.get_unchecked(2..).as_ptr().cast());
-                let mut vk2 = _mm_loadu_ps(other.get_unchecked(4..).as_ptr().cast());
-                let mut vk3 = _mm_loadu_ps(other.get_unchecked(6..).as_ptr().cast());
+            let mut vk0 = SseStoreF::load(other);
+            let mut vk1 = SseStoreF::load(&other[2..]);
+            let mut vk2 = SseStoreF::load(&other[4..]);
+            let mut vk3 = SseStoreF::load(&other[6..]);
 
-                vk0 = _mm_xor_ps(vk0, conj_factors);
-                vk1 = _mm_xor_ps(vk1, conj_factors);
-                vk2 = _mm_xor_ps(vk2, conj_factors);
-                vk3 = _mm_xor_ps(vk3, conj_factors);
+            vk0 = vk0.xor(conj_factors);
+            vk1 = vk1.xor(conj_factors);
+            vk2 = vk2.xor(conj_factors);
+            vk3 = vk3.xor(conj_factors);
 
-                let p0 = _mm_mul_ps(_mm_fcmul_ps(vd0, vk0), v_norm_factor);
-                let p1 = _mm_mul_ps(_mm_fcmul_ps(vd1, vk1), v_norm_factor);
-                let p2 = _mm_mul_ps(_mm_fcmul_ps(vd2, vk2), v_norm_factor);
-                let p3 = _mm_mul_ps(_mm_fcmul_ps(vd3, vk3), v_norm_factor);
+            let p0 = SseStoreF::mul(SseStoreF::mul_by_complex(vd0, vk0), v_norm_factor);
+            let p1 = SseStoreF::mul(SseStoreF::mul_by_complex(vd1, vk1), v_norm_factor);
+            let p2 = SseStoreF::mul(SseStoreF::mul_by_complex(vd2, vk2), v_norm_factor);
+            let p3 = SseStoreF::mul(SseStoreF::mul_by_complex(vd3, vk3), v_norm_factor);
 
-                _mm_storeu_ps(dst.as_mut_ptr().cast(), p0);
-                _mm_storeu_ps(dst.get_unchecked_mut(2..).as_mut_ptr().cast(), p1);
-                _mm_storeu_ps(dst.get_unchecked_mut(4..).as_mut_ptr().cast(), p2);
-                _mm_storeu_ps(dst.get_unchecked_mut(6..).as_mut_ptr().cast(), p3);
-            }
+            p0.write(dst);
+            p1.write(&mut dst[2..]);
+            p2.write(&mut dst[4..]);
+            p3.write(&mut dst[6..]);
+        }
 
-            let dst_rem = dst.chunks_exact_mut(8).into_remainder();
-            let input_rem = input.chunks_exact(8).remainder();
-            let other_rem = other.chunks_exact(8).remainder();
+        let dst_rem = dst.as_chunks_mut::<8>().1;
+        let input_rem = input.as_chunks::<8>().1;
+        let other_rem = other.as_chunks::<8>().1;
 
-            for ((dst, input), other) in dst_rem
-                .chunks_exact_mut(2)
-                .zip(input_rem.chunks_exact(2))
-                .zip(other_rem.chunks_exact(2))
-            {
-                let v0 = _mm_loadu_ps(input.as_ptr().cast());
-                let mut v1 = _mm_loadu_ps(other.as_ptr().cast());
+        for ((dst, input), other) in dst_rem
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(input_rem.as_chunks::<2>().0.iter())
+            .zip(other_rem.as_chunks::<2>().0.iter())
+        {
+            let v0 = SseStoreF::load(input);
+            let mut v1 = SseStoreF::load(other);
 
-                v1 = _mm_xor_ps(v1, conj_factors);
+            v1 = v1.xor(conj_factors);
 
-                let p1 = _mm_mul_ps(_mm_fcmul_ps(v0, v1), v_norm_factor);
-                _mm_storeu_ps(dst.as_mut_ptr().cast(), p1);
-            }
+            let p1 = SseStoreF::mul(SseStoreF::mul_by_complex(v0, v1), v_norm_factor);
+            p1.write(dst);
+        }
 
-            let dst_rem = dst_rem.chunks_exact_mut(2).into_remainder();
-            let other_rem = other_rem.chunks_exact(2).remainder();
-            let input_rem = input_rem.chunks_exact(2).remainder();
+        let dst_rem = dst_rem.as_chunks_mut::<2>().1;
+        let other_rem = other_rem.as_chunks::<2>().1;
+        let input_rem = input_rem.as_chunks::<2>().1;
 
-            for ((dst, input), other) in dst_rem
-                .iter_mut()
-                .zip(input_rem.iter())
-                .zip(other_rem.iter())
-            {
-                let v0 = _mm_castsi128_ps(_mm_loadu_si64((input as *const Complex<f32>).cast()));
-                let mut v1 =
-                    _mm_castsi128_ps(_mm_loadu_si64((other as *const Complex<f32>).cast()));
+        for ((dst, input), other) in dst_rem
+            .iter_mut()
+            .zip(input_rem.iter())
+            .zip(other_rem.iter())
+        {
+            let v0 = SseStoreF::load1(input);
+            let mut v1 = SseStoreF::load1(other);
 
-                v1 = _mm_xor_ps(v1, conj_factors);
+            v1 = v1.xor(conj_factors);
 
-                let p1 = _mm_mul_ps(_mm_fcmul_ps(v0, v1), v_norm_factor);
-                _mm_storeu_si64((dst as *mut Complex<f32>).cast(), _mm_castps_si128(p1));
-            }
+            let p1 = SseStoreF::mul(SseStoreF::mul_by_complex(v0, v1), v_norm_factor);
+            p1.write1(dst);
         }
     }
 }

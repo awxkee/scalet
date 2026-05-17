@@ -27,11 +27,9 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::complex_arith::ComplexArithmetic;
+use crate::sse::stored::SseStoreD;
 use num_complex::Complex;
-#[cfg(target_arch = "x86")]
-use std::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::ops::Mul;
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct Sse42SpectrumF64 {}
@@ -50,17 +48,6 @@ impl ComplexArithmetic<f64> for Sse42SpectrumF64 {
     }
 }
 
-#[inline]
-#[target_feature(enable = "sse4.2")]
-fn _mm_fcmul_pd(a: __m128d, b: __m128d) -> __m128d {
-    let mut temp1 = _mm_unpacklo_pd(b, b);
-    let mut temp2 = _mm_unpackhi_pd(b, b);
-    temp1 = _mm_mul_pd(temp1, a);
-    temp2 = _mm_mul_pd(temp2, a);
-    temp2 = _mm_shuffle_pd::<0x01>(temp2, temp2);
-    _mm_addsub_pd(temp1, temp2)
-}
-
 impl Sse42SpectrumF64 {
     #[target_feature(enable = "sse4.2")]
     fn mul_by_b_conj_normalize(
@@ -70,22 +57,19 @@ impl Sse42SpectrumF64 {
         other: &[Complex<f64>],
         normalize_value: f64,
     ) {
-        unsafe {
-            static CONJ_FACTORS: [f64; 2] = [0.0, -0.0];
-            let conj_factors = _mm_loadu_pd(CONJ_FACTORS.as_ptr());
+        let conj_factors = SseStoreD::conj_flags();
 
-            let v_norm_factor = _mm_set1_pd(normalize_value);
+        let v_norm_factor = SseStoreD::dup(normalize_value);
 
-            for ((dst, input), other) in dst.iter_mut().zip(input.iter()).zip(other.iter()) {
-                let v0 = _mm_loadu_pd(input as *const Complex<f64> as *const _);
-                let mut v1 = _mm_loadu_pd(other as *const Complex<f64> as *const _);
+        for ((dst, input), other) in dst.iter_mut().zip(input.iter()).zip(other.iter()) {
+            let v0 = SseStoreD::load1(input);
+            let mut v1 = SseStoreD::load1(other);
 
-                v1 = _mm_xor_pd(v1, conj_factors);
+            v1 = v1.xor(conj_factors);
 
-                let lo = _mm_mul_pd(_mm_fcmul_pd(v0, v1), v_norm_factor);
+            let lo = SseStoreD::mul(SseStoreD::mul_by_complex(v0, v1), v_norm_factor);
 
-                _mm_storeu_pd(dst as *mut Complex<f64> as *mut _, lo);
-            }
+            lo.write1(dst);
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "scalet"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 description = "Continious wavelet transform"
 readme = "README.md"
@@ -12,7 +12,7 @@ categories = ["algorithms", "science"]
 homepage = "https://github.com/awxkee/scalet"
 repository = "https://github.com/awxkee/scalet"
 exclude = ["*.jpg", "/assets", "*.png", "*.sh", "/assets/*"]
-rust-version = "1.87.0"
+rust-version = "1.89.0"
 
 [dependencies]
 num-traits = "0.2.19"
@@ -20,8 +20,12 @@ num-complex = "0.4.6"
 pxfm = "0.1.27"
 zaft = "0.3"
 
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+wasm-bindgen-test = "0.3.71"
+
 [features]
-default = ["neon", "sse", "avx"]
+default = ["neon", "sse", "avx", "wasm"]
 neon = ["zaft/neon"]
 # FEAT_FCMA ( complex multiply add on NEON )
 fcma = ["neon", "zaft/fcma"]
@@ -29,6 +33,8 @@ fcma = ["neon", "zaft/fcma"]
 sse = []
 # Enables AVX2 + FMA acceleration
 avx = ["zaft/avx"]
+# Wasm SIMD128
+wasm = []
 
 [package.metadata.docs.rs]
 # To build locally:

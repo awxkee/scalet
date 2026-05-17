@@ -42,4 +42,5 @@ pub trait CwtWavelet<T> {
     ///
     /// * `omegas`: A slice of angular frequencies (omega_k) corresponding to the FFT bins.
     fn make_wavelet(&self, omegas: &[T]) -> Result<Vec<Complex<T>>, ScaletError>;
+    fn center_frequency(&self) -> T;
 }

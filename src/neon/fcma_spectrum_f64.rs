@@ -28,9 +28,9 @@
  */
 
 use crate::complex_arith::ComplexArithmetic;
-use crate::neon::util::vfcmul_conj_f64;
+use crate::neon::stored::NeonStoreD;
 use num_complex::Complex;
-use std::arch::aarch64::*;
+use std::ops::Mul;
 
 #[derive(Copy, Clone, Default, Debug)]
 pub(crate) struct FcmaSpectrumF64 {}
@@ -56,50 +56,50 @@ impl FcmaSpectrumF64 {
         other: &[Complex<f64>],
         normalize_value: f64,
     ) {
-        unsafe {
-            let v_norm_factor = vdupq_n_f64(normalize_value);
+        let v_norm_factor = NeonStoreD::dup(normalize_value);
 
-            for ((dst, input), other) in dst
-                .chunks_exact_mut(4)
-                .zip(input.chunks_exact(4))
-                .zip(other.chunks_exact(4))
-            {
-                let vd0 = vld1q_f64(input.as_ptr().cast());
-                let vd1 = vld1q_f64(input.get_unchecked(1..).as_ptr().cast());
-                let vd2 = vld1q_f64(input.get_unchecked(2..).as_ptr().cast());
-                let vd3 = vld1q_f64(input.get_unchecked(3..).as_ptr().cast());
+        for ((dst, input), other) in dst
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(input.as_chunks::<4>().0.iter())
+            .zip(other.as_chunks::<4>().0.iter())
+        {
+            let vd0 = NeonStoreD::load(input);
+            let vd1 = NeonStoreD::load(&input[1..]);
+            let vd2 = NeonStoreD::load(&input[2..]);
+            let vd3 = NeonStoreD::load(&input[3..]);
 
-                let vk0 = vld1q_f64(other.as_ptr().cast());
-                let vk1 = vld1q_f64(other.get_unchecked(1..).as_ptr().cast());
-                let vk2 = vld1q_f64(other.get_unchecked(2..).as_ptr().cast());
-                let vk3 = vld1q_f64(other.get_unchecked(3..).as_ptr().cast());
+            let vk0 = NeonStoreD::load(other);
+            let vk1 = NeonStoreD::load(&other[1..]);
+            let vk2 = NeonStoreD::load(&other[2..]);
+            let vk3 = NeonStoreD::load(&other[3..]);
 
-                let p0 = vmulq_f64(vfcmul_conj_f64(vd0, vk0), v_norm_factor);
-                let p1 = vmulq_f64(vfcmul_conj_f64(vd1, vk1), v_norm_factor);
-                let p2 = vmulq_f64(vfcmul_conj_f64(vd2, vk2), v_norm_factor);
-                let p3 = vmulq_f64(vfcmul_conj_f64(vd3, vk3), v_norm_factor);
+            let p0 = NeonStoreD::mul(NeonStoreD::mul_by_conj_b(vd0, vk0), v_norm_factor);
+            let p1 = NeonStoreD::mul(NeonStoreD::mul_by_conj_b(vd1, vk1), v_norm_factor);
+            let p2 = NeonStoreD::mul(NeonStoreD::mul_by_conj_b(vd2, vk2), v_norm_factor);
+            let p3 = NeonStoreD::mul(NeonStoreD::mul_by_conj_b(vd3, vk3), v_norm_factor);
 
-                vst1q_f64(dst.as_mut_ptr().cast(), p0);
-                vst1q_f64(dst.get_unchecked_mut(1..).as_mut_ptr().cast(), p1);
-                vst1q_f64(dst.get_unchecked_mut(2..).as_mut_ptr().cast(), p2);
-                vst1q_f64(dst.get_unchecked_mut(3..).as_mut_ptr().cast(), p3);
-            }
+            p0.write(dst);
+            p1.write(&mut dst[1..]);
+            p2.write(&mut dst[2..]);
+            p3.write(&mut dst[3..]);
+        }
 
-            let dst_rem = dst.chunks_exact_mut(4).into_remainder();
-            let other_rem = other.chunks_exact(4).remainder();
-            let input_rem = input.chunks_exact(4).remainder();
+        let dst_rem = dst.as_chunks_mut::<4>().1;
+        let other_rem = other.as_chunks::<4>().1;
+        let input_rem = input.as_chunks::<4>().1;
 
-            for ((dst, input), other) in dst_rem
-                .iter_mut()
-                .zip(input_rem.iter())
-                .zip(other_rem.iter())
-            {
-                let v0 = vld1q_f64(input as *const Complex<f64> as *const f64);
-                let v1 = vld1q_f64(other as *const Complex<f64> as *const f64);
+        for ((dst, input), other) in dst_rem
+            .iter_mut()
+            .zip(input_rem.iter())
+            .zip(other_rem.iter())
+        {
+            let v0 = NeonStoreD::load1(input);
+            let v1 = NeonStoreD::load1(other);
 
-                let p1 = vmulq_f64(vfcmul_conj_f64(v0, v1), v_norm_factor);
-                vst1q_f64(dst as *mut Complex<f64> as *mut f64, p1);
-            }
+            let p1 = NeonStoreD::mul(NeonStoreD::mul_by_conj_b(v0, v1), v_norm_factor);
+            p1.write1(dst);
         }
     }
 }

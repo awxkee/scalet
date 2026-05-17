@@ -27,9 +27,9 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::complex_arith::ComplexArithmetic;
-use crate::neon::util::{vfcmul_conj_f32, vfcmulq_conj_f32};
+use crate::neon::storef::NeonStoreF;
 use num_complex::Complex;
-use std::arch::aarch64::*;
+use std::ops::Mul;
 
 #[derive(Default)]
 pub(crate) struct FcmaSpectrumF32 {}
@@ -55,66 +55,68 @@ impl FcmaSpectrumF32 {
         other: &[Complex<f32>],
         normalize_value: f32,
     ) {
-        unsafe {
-            let v_norm_factor = vdupq_n_f32(normalize_value);
+        let v_norm_factor = NeonStoreF::dup(normalize_value);
 
-            for ((dst, input), other) in dst
-                .chunks_exact_mut(8)
-                .zip(input.chunks_exact(8))
-                .zip(other.chunks_exact(8))
-            {
-                let vd0 = vld1q_f32(input.as_ptr().cast());
-                let vd1 = vld1q_f32(input.get_unchecked(2..).as_ptr().cast());
-                let vd2 = vld1q_f32(input.get_unchecked(4..).as_ptr().cast());
-                let vd3 = vld1q_f32(input.get_unchecked(6..).as_ptr().cast());
+        for ((dst, input), other) in dst
+            .as_chunks_mut::<8>()
+            .0
+            .iter_mut()
+            .zip(input.as_chunks::<8>().0.iter())
+            .zip(other.as_chunks::<8>().0.iter())
+        {
+            let vd0 = NeonStoreF::load(input);
+            let vd1 = NeonStoreF::load(&input[2..]);
+            let vd2 = NeonStoreF::load(&input[4..]);
+            let vd3 = NeonStoreF::load(&input[6..]);
 
-                let vk0 = vld1q_f32(other.as_ptr().cast());
-                let vk1 = vld1q_f32(other.get_unchecked(2..).as_ptr().cast());
-                let vk2 = vld1q_f32(other.get_unchecked(4..).as_ptr().cast());
-                let vk3 = vld1q_f32(other.get_unchecked(6..).as_ptr().cast());
+            let vk0 = NeonStoreF::load(other);
+            let vk1 = NeonStoreF::load(&other[2..]);
+            let vk2 = NeonStoreF::load(&other[4..]);
+            let vk3 = NeonStoreF::load(&other[6..]);
 
-                let p0 = vmulq_f32(vfcmulq_conj_f32(vd0, vk0), v_norm_factor);
-                let p1 = vmulq_f32(vfcmulq_conj_f32(vd1, vk1), v_norm_factor);
-                let p2 = vmulq_f32(vfcmulq_conj_f32(vd2, vk2), v_norm_factor);
-                let p3 = vmulq_f32(vfcmulq_conj_f32(vd3, vk3), v_norm_factor);
+            let p0 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(vd0, vk0), v_norm_factor);
+            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(vd1, vk1), v_norm_factor);
+            let p2 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(vd2, vk2), v_norm_factor);
+            let p3 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(vd3, vk3), v_norm_factor);
 
-                vst1q_f32(dst.as_mut_ptr().cast(), p0);
-                vst1q_f32(dst.get_unchecked_mut(2..).as_mut_ptr().cast(), p1);
-                vst1q_f32(dst.get_unchecked_mut(4..).as_mut_ptr().cast(), p2);
-                vst1q_f32(dst.get_unchecked_mut(6..).as_mut_ptr().cast(), p3);
-            }
+            p0.write(dst);
+            p1.write(&mut dst[2..]);
+            p2.write(&mut dst[4..]);
+            p3.write(&mut dst[6..]);
+        }
 
-            let dst_rem = dst.chunks_exact_mut(8).into_remainder();
-            let input_rem = input.chunks_exact(8).remainder();
-            let other_rem = other.chunks_exact(8).remainder();
+        let dst_rem = dst.as_chunks_mut::<8>().1;
+        let input_rem = input.as_chunks::<8>().1;
+        let other_rem = other.as_chunks::<8>().1;
 
-            for ((dst, input), other) in dst_rem
-                .chunks_exact_mut(2)
-                .zip(input_rem.chunks_exact(2))
-                .zip(other_rem.chunks_exact(2))
-            {
-                let v0 = vld1q_f32(input.as_ptr().cast());
-                let v1 = vld1q_f32(other.as_ptr().cast());
+        for ((dst, input), other) in dst_rem
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(input_rem.as_chunks::<2>().0.iter())
+            .zip(other_rem.as_chunks::<2>().0.iter())
+        {
+            let v0 = NeonStoreF::load(input);
+            let v1 = NeonStoreF::load(other);
 
-                let p1 = vmulq_f32(vfcmulq_conj_f32(v0, v1), v_norm_factor);
-                vst1q_f32(dst.as_mut_ptr().cast(), p1);
-            }
+            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(v0, v1), v_norm_factor);
+            p1.write(dst);
+        }
 
-            let dst_rem = dst_rem.chunks_exact_mut(2).into_remainder();
-            let other_rem = other_rem.chunks_exact(2).remainder();
-            let input_rem = input_rem.chunks_exact(2).remainder();
+        let dst_rem = dst_rem.as_chunks_mut::<2>().1;
+        let other_rem = other_rem.as_chunks::<2>().1;
+        let input_rem = input_rem.as_chunks::<2>().1;
 
-            for ((dst, input), other) in dst_rem
-                .iter_mut()
-                .zip(input_rem.iter())
-                .zip(other_rem.iter())
-            {
-                let v0 = vld1_f32(input as *const Complex<f32> as *const f32);
-                let v1 = vld1_f32(other as *const Complex<f32> as *const f32);
+        for ((dst, input), other) in dst_rem
+            .iter_mut()
+            .zip(input_rem.iter())
+            .zip(other_rem.iter())
+        {
+            let v0 = NeonStoreF::load1(input);
+            let v1 = NeonStoreF::load1(other);
 
-                let p1 = vmul_f32(vfcmul_conj_f32(v0, v1), vget_low_f32(v_norm_factor));
-                vst1_f32(dst as *mut Complex<f32> as *mut f32, p1);
-            }
+            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_conj_b(v0, v1), v_norm_factor);
+            p1.write1(dst);
         }
     }
 }

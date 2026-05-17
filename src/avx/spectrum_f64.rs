@@ -26,9 +26,11 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+use crate::avx::stored::AvxStoreD;
 use crate::complex_arith::ComplexArithmetic;
 use num_complex::Complex;
 use std::arch::x86_64::*;
+use std::ops::Mul;
 
 // a * b.conj()
 #[inline]
@@ -81,71 +83,70 @@ impl AvxSpectrumF64 {
         other: &[Complex<f64>],
         normalize_value: f64,
     ) {
-        unsafe {
-            let v_norm_factor = _mm256_set1_pd(normalize_value);
+        let v_norm_factor = AvxStoreD::dup(normalize_value);
 
-            for ((dst, input), other) in dst
-                .chunks_exact_mut(8)
-                .zip(input.chunks_exact(8))
-                .zip(other.chunks_exact(8))
-            {
-                let vd0 = _mm256_loadu_pd(input.as_ptr().cast());
-                let vd1 = _mm256_loadu_pd(input.get_unchecked(2..).as_ptr().cast());
-                let vd2 = _mm256_loadu_pd(input.get_unchecked(4..).as_ptr().cast());
-                let vd3 = _mm256_loadu_pd(input.get_unchecked(6..).as_ptr().cast());
+        for ((dst, input), other) in dst
+            .as_chunks_mut::<8>()
+            .0
+            .iter_mut()
+            .zip(input.as_chunks::<8>().0.iter())
+            .zip(other.as_chunks::<8>().0.iter())
+        {
+            let vd0 = AvxStoreD::load(input);
+            let vd1 = AvxStoreD::load(&input[2..]);
+            let vd2 = AvxStoreD::load(&input[4..]);
+            let vd3 = AvxStoreD::load(&input[6..]);
 
-                let vk0 = _mm256_loadu_pd(other.as_ptr().cast());
-                let vk1 = _mm256_loadu_pd(other.get_unchecked(2..).as_ptr().cast());
-                let vk2 = _mm256_loadu_pd(other.get_unchecked(4..).as_ptr().cast());
-                let vk3 = _mm256_loadu_pd(other.get_unchecked(6..).as_ptr().cast());
+            let vk0 = AvxStoreD::load(other);
+            let vk1 = AvxStoreD::load(&other[2..]);
+            let vk2 = AvxStoreD::load(&other[4..]);
+            let vk3 = AvxStoreD::load(&other[6..]);
 
-                let d0 = _mm256_mul_pd(_mm256_fcmul_pd_conj_b(vd0, vk0), v_norm_factor);
-                let d1 = _mm256_mul_pd(_mm256_fcmul_pd_conj_b(vd1, vk1), v_norm_factor);
-                let d2 = _mm256_mul_pd(_mm256_fcmul_pd_conj_b(vd2, vk2), v_norm_factor);
-                let d3 = _mm256_mul_pd(_mm256_fcmul_pd_conj_b(vd3, vk3), v_norm_factor);
+            let d0 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(vd0, vk0), v_norm_factor);
+            let d1 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(vd1, vk1), v_norm_factor);
+            let d2 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(vd2, vk2), v_norm_factor);
+            let d3 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(vd3, vk3), v_norm_factor);
 
-                _mm256_storeu_pd(dst.as_mut_ptr().cast(), d0);
-                _mm256_storeu_pd(dst.get_unchecked_mut(2..).as_mut_ptr().cast(), d1);
-                _mm256_storeu_pd(dst.get_unchecked_mut(4..).as_mut_ptr().cast(), d2);
-                _mm256_storeu_pd(dst.get_unchecked_mut(6..).as_mut_ptr().cast(), d3);
-            }
+            d0.write(dst);
+            d1.write(&mut dst[2..]);
+            d2.write(&mut dst[4..]);
+            d3.write(&mut dst[6..]);
+        }
 
-            let dst_rem = dst.chunks_exact_mut(8).into_remainder();
-            let input_rem = input.chunks_exact(8).remainder();
-            let other_rem = other.chunks_exact(8).remainder();
+        let dst_rem = dst.as_chunks_mut::<8>().1;
+        let input_rem = input.as_chunks::<8>().1;
+        let other_rem = other.as_chunks::<8>().1;
 
-            for ((dst, input), other) in dst_rem
-                .chunks_exact_mut(8)
-                .zip(input_rem.chunks_exact(8))
-                .zip(other_rem.chunks_exact(8))
-            {
-                let a0 = _mm256_loadu_pd(input.as_ptr().cast());
-                let b0 = _mm256_loadu_pd(other.as_ptr().cast());
+        for ((dst, input), other) in dst_rem
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(input_rem.as_chunks::<2>().0.iter())
+            .zip(other_rem.as_chunks::<2>().0.iter())
+        {
+            let a0 = AvxStoreD::load(input);
+            let b0 = AvxStoreD::load(other);
 
-                let d0 = _mm256_mul_pd(_mm256_fcmul_pd_conj_b(a0, b0), v_norm_factor);
+            let d0 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(a0, b0), v_norm_factor);
 
-                _mm256_storeu_pd(dst.as_mut_ptr().cast(), d0);
-            }
+            d0.write(dst);
+        }
 
-            let dst_rem = dst_rem.chunks_exact_mut(8).into_remainder();
-            let input_rem = input_rem.chunks_exact(8).remainder();
-            let other_rem = other_rem.chunks_exact(8).remainder();
+        let dst_rem = dst_rem.as_chunks_mut::<2>().1;
+        let input_rem = input_rem.as_chunks::<2>().1;
+        let other_rem = other_rem.as_chunks::<2>().1;
 
-            for ((dst, input), other) in dst_rem
-                .iter_mut()
-                .zip(input_rem.iter())
-                .zip(other_rem.iter())
-            {
-                let v0 = _mm_loadu_pd(input as *const Complex<f64> as *const _);
-                let v1 = _mm_loadu_pd(other as *const Complex<f64> as *const _);
+        for ((dst, input), other) in dst_rem
+            .iter_mut()
+            .zip(input_rem.iter())
+            .zip(other_rem.iter())
+        {
+            let v0 = AvxStoreD::load1(input);
+            let v1 = AvxStoreD::load1(other);
 
-                let lo = _mm_mul_pd(
-                    _mm_fcmul_pd_conj_b(v0, v1),
-                    _mm256_castpd256_pd128(v_norm_factor),
-                );
+            let d0 = AvxStoreD::mul(AvxStoreD::mul_by_conj_b(v0, v1), v_norm_factor);
 
-                _mm_storeu_pd(dst as *mut Complex<f64> as *mut _, lo);
-            }
+            d0.write1(dst);
         }
     }
 }

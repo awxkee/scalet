@@ -1,5 +1,5 @@
 /*
- * // Copyright (c) Radzivon Bartoshyk 12/2025. All rights reserved.
+ * // Copyright (c) Radzivon Bartoshyk 5/2026. All rights reserved.
  * //
  * // Redistribution and use in source and binary forms, with or without modification,
  * // are permitted provided that the following conditions are met:
@@ -27,15 +27,15 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 use crate::complex_arith::ComplexArithmetic;
-use crate::neon::storef::NeonStoreF;
+use crate::wasm::storef::WasmStoreF;
 use num_complex::Complex;
 use std::ops::Mul;
 
 #[derive(Default)]
-pub(crate) struct NeonSpectrumF32 {}
+pub(crate) struct WasmSpectrumF32 {}
 
-impl NeonSpectrumF32 {
-    #[target_feature(enable = "neon")]
+impl WasmSpectrumF32 {
+    #[target_feature(enable = "simd128")]
     fn mul_by_b_conj_normalize_impl(
         &self,
         dst: &mut [Complex<f32>],
@@ -43,8 +43,8 @@ impl NeonSpectrumF32 {
         other: &[Complex<f32>],
         normalize_value: f32,
     ) {
-        let v_norm_factor = NeonStoreF::dup(normalize_value);
-        let conj_factors = NeonStoreF::conj_flags();
+        let v_norm_factor = WasmStoreF::dup(normalize_value);
+        let conj_factors = WasmStoreF::conj_flags();
 
         for ((dst, input), other) in dst
             .as_chunks_mut::<8>()
@@ -53,25 +53,25 @@ impl NeonSpectrumF32 {
             .zip(input.as_chunks::<8>().0.iter())
             .zip(other.as_chunks::<8>().0.iter())
         {
-            let vd0 = NeonStoreF::load(input);
-            let vd1 = NeonStoreF::load(&input[2..]);
-            let vd2 = NeonStoreF::load(&input[4..]);
-            let vd3 = NeonStoreF::load(&input[6..]);
+            let vd0 = WasmStoreF::load(input);
+            let vd1 = WasmStoreF::load(&input[2..]);
+            let vd2 = WasmStoreF::load(&input[4..]);
+            let vd3 = WasmStoreF::load(&input[6..]);
 
-            let mut vk0 = NeonStoreF::load(other);
-            let mut vk1 = NeonStoreF::load(&other[2..]);
-            let mut vk2 = NeonStoreF::load(&other[4..]);
-            let mut vk3 = NeonStoreF::load(&other[6..]);
+            let mut vk0 = WasmStoreF::load(other);
+            let mut vk1 = WasmStoreF::load(&other[2..]);
+            let mut vk2 = WasmStoreF::load(&other[4..]);
+            let mut vk3 = WasmStoreF::load(&other[6..]);
 
             vk0 = vk0.xor(conj_factors);
             vk1 = vk1.xor(conj_factors);
             vk2 = vk2.xor(conj_factors);
             vk3 = vk3.xor(conj_factors);
 
-            let p0 = NeonStoreF::mul(NeonStoreF::mul_by_complex(vd0, vk0), v_norm_factor);
-            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_complex(vd1, vk1), v_norm_factor);
-            let p2 = NeonStoreF::mul(NeonStoreF::mul_by_complex(vd2, vk2), v_norm_factor);
-            let p3 = NeonStoreF::mul(NeonStoreF::mul_by_complex(vd3, vk3), v_norm_factor);
+            let p0 = WasmStoreF::mul(WasmStoreF::mul_by_complex(vd0, vk0), v_norm_factor);
+            let p1 = WasmStoreF::mul(WasmStoreF::mul_by_complex(vd1, vk1), v_norm_factor);
+            let p2 = WasmStoreF::mul(WasmStoreF::mul_by_complex(vd2, vk2), v_norm_factor);
+            let p3 = WasmStoreF::mul(WasmStoreF::mul_by_complex(vd3, vk3), v_norm_factor);
 
             p0.write(dst);
             p1.write(&mut dst[2..]);
@@ -90,12 +90,12 @@ impl NeonSpectrumF32 {
             .zip(input_rem.as_chunks::<2>().0.iter())
             .zip(other_rem.as_chunks::<2>().0.iter())
         {
-            let v0 = NeonStoreF::load(input);
-            let mut v1 = NeonStoreF::load(other);
+            let v0 = WasmStoreF::load(input);
+            let mut v1 = WasmStoreF::load(other);
 
             v1 = v1.xor(conj_factors);
 
-            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_complex(v0, v1), v_norm_factor);
+            let p1 = WasmStoreF::mul(WasmStoreF::mul_by_complex(v0, v1), v_norm_factor);
             p1.write(dst);
         }
 
@@ -108,18 +108,18 @@ impl NeonSpectrumF32 {
             .zip(input_rem.iter())
             .zip(other_rem.iter())
         {
-            let v0 = NeonStoreF::load1(input);
-            let mut v1 = NeonStoreF::load1(other);
+            let v0 = WasmStoreF::load1(input);
+            let mut v1 = WasmStoreF::load1(other);
 
             v1 = v1.xor(conj_factors);
 
-            let p1 = NeonStoreF::mul(NeonStoreF::mul_by_complex(v0, v1), v_norm_factor);
+            let p1 = WasmStoreF::mul(WasmStoreF::mul_by_complex(v0, v1), v_norm_factor);
             p1.write1(dst);
         }
     }
 }
 
-impl ComplexArithmetic<f32> for NeonSpectrumF32 {
+impl ComplexArithmetic<f32> for WasmSpectrumF32 {
     fn mul_by_b_conj_normalize(
         &self,
         dst: &mut [Complex<f32>],
@@ -127,8 +127,6 @@ impl ComplexArithmetic<f32> for NeonSpectrumF32 {
         other: &[Complex<f32>],
         normalize_value: f32,
     ) {
-        unsafe {
-            self.mul_by_b_conj_normalize_impl(dst, input, other, normalize_value);
-        }
+        self.mul_by_b_conj_normalize_impl(dst, input, other, normalize_value);
     }
 }
